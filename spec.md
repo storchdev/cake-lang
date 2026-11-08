@@ -4,7 +4,7 @@ Nov 2, 2026 · @Hudson Shi
 
 ## Goals and principles
 
-This is a statically typed, compiled language for competitive programming and Advent of Code, built to get from idea to accepted solution with the least friction. It targets LLVM and is not meant for large, durable or multi-file software.
+This is a statically typed, compiled language for competitive programming and Advent of Code, built to get from idea to accepted solution with the least friction. It targets LLVM and is not meant for large, durable software, though a program can import helper files of its own.
 
 **Goals**
 
@@ -16,7 +16,7 @@ This is a statically typed, compiled language for competitive programming and Ad
 
 **Non-goals**
 
-- Modules, packages or multi-file projects.
+- Packages, package managers or project manifests. A file can import other files, and that is all.
 - Class hierarchies and inheritance.
 - Manual memory management.
 - User-written generic syntax such as `<T>` or trait bounds.
@@ -31,7 +31,7 @@ This is a statically typed, compiled language for competitive programming and Ad
 
 ## Syntax basics
 
-Braces delimit blocks and newlines end statements. Functions and lambdas follow one rule: an `= expr` or `|x| expr` body returns its expression, and a braced body uses `return`. Other braced blocks used as values, in `if`, `match` and `try`, yield their last expression. A program is one file of top-level statements and functions, run in order, with no `main`.
+Braces delimit blocks and newlines end statements. Functions and lambdas follow one rule: an `= expr` or `|x| expr` body returns its expression, and a braced body uses `return`. Other braced blocks used as values, in `if`, `match` and `try`, yield their last expression. A program is a file of top-level statements and functions, run in order, with no `main`. It can import other files; see Imports.
 
 ```
 // assignment declares a variable the first time; types are inferred
@@ -495,6 +495,59 @@ fn *(a: int, b: Vec) = ...    // 2 * v is its own definition
 
 **Memoization.** A `memo` modifier before `fn` caches results by arguments, which covers most dynamic programming. The cache does not see globals the function reads, so with several test cases call `f.clear()` before each one.
 
+## Imports
+
+A program can import other source files, mainly so Advent of Code days can share parsing and grid helpers and so a personal library of templates can be reused. There are no packages, no `__init__` files and no manifest: a module is one file, and a folder is only part of a path.
+
+```
+import geom                 // geom.cp next to this file
+import aoc.parse            // aoc/parse.cp; the module is named parse
+import aoc.parse as p       // rename
+import grid2.*              // everything in grid2, unqualified
+import aoc.input.{lines, ints}  // just these names, unqualified
+
+pts = read_lines().map(parse.point)
+print(geom.dist(pts[0], pts[1]))
+a = geom.Point(1, 2)
+b = a + geom.Point(3, 4)    // geom's + on Point, found without a prefix
+print(a.dist(b))            // geom's dist, found through Point's module
+```
+
+**Lookup.** `import a.b` loads `a/b.cp` relative to the importing file. If it is not there, the compiler looks in one user library folder, set by an environment variable, so personal templates are available from any day's folder. The `.cp` extension is a placeholder until the language has a name.
+
+**The standard library is always in scope.** Every library name is available unqualified with no import, as if star-imported.
+
+**Your modules are accessed with a dot.** `import geom` binds the name `geom`, and its contents are reached as `geom.dist`, `geom.Point` and so on.
+
+**Selectors pick what comes in unqualified.** Whatever follows the module path says what to take, so there is one keyword and it reads left to right:
+
+- `import geom.*` brings every name in `geom` into scope unqualified.
+- `import geom.{dist, Point}` brings in just those names.
+- Both forms still bind `geom`, so `geom.dist` keeps working.
+- `.*` and `.{...}` can only end a path, so `import a.b.*` is fine and `import a.*.b` is a syntax error.
+- If two imports bring in the same name, they merge as overloads when their parameter types differ. A call that matches both equally is a compile error naming both modules, and a prefix like `geom.dist` resolves it.
+
+**Calls found through the type.** Uniform call syntax and operators would be useless on types from a plain `import` if they only saw unqualified names, so they also look in the module that defined each argument's type:
+
+- `x.f(y)` tries a field `f`, then `f` in scope, then `f` in the module that defined the type of `x`.
+- An operator or hook (`+`, `==`, `cmp`, `hash`, `str` and the rest) on a record or variant also looks in the module that defined it, so `a + b`, `print(p)` and sorting work on `geom.Point` without a prefix.
+- Plain calls like `dist(a, b)` and calls on builtin types like `5.sq()` do not do this; write `geom.dist(a, b)` and `geom.sq(5)`.
+
+**Shadowing is silent.** A name defined in your file hides a library or imported name with no warning, and a local variable can hide a module name. Two details:
+
+- A definition with the same parameter types replaces the library's version. One with different parameter types adds an overload, so defining `fn min(a: Point, b: Point)` leaves `min(3, 4)` working.
+- Shadowing only affects the file that does it. Library code and other modules keep calling their own definitions, so defining your own `find` does not break `dsu`.
+
+**What an imported file may contain.**
+
+- Anything a program may contain. Its top-level statements run once, before the importer's, in the order imports are first reached. That is how a module sets constants such as `DIRS` or a precomputed table.
+- Its globals belong to it and are reached as `geom.EPS`.
+- `#in` and `#out` blocks are ignored on import but still run when the file itself is tested, so a library file can carry its own tests.
+- Program-level pragmas such as `#default int = big` and `#pp` belong only to the main file and are an error elsewhere. Library code is generic over the `int` alias, so it follows the main file's choice.
+- Cyclic imports are an error.
+
+**Cost.** Only functions that are called get compiled, so importing a large helper file costs nothing at runtime. Unannotated functions are checked where they are used, so an error inside an imported function shows the call site in your file and the chain of imports.
+
 ## Iterators and chaining
 
 Every collection and range supports method chaining, so a pipeline reads left to right as the data flows.
@@ -662,5 +715,6 @@ Read the top row left to right, then the bottom row right to left. The C runtime
 
 These decisions are still open, and each can change the compiler's design.
 
-- **Language name.** The language is still unnamed.
+- **Language name.** The language is still unnamed, which also leaves the source file extension open.
+- **Imports.** Whether names starting with `_` should be private to their module. Whether a `bundle` command that inlines imports into one file is needed if submitting to online judges ever matters.
 - **Before any compiler code,** rewrite 10 to 15 real contest and Advent of Code solutions in this syntax and note where it feels clumsy.
