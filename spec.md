@@ -570,6 +570,28 @@ best = read_lines()
 - Lambda parameter types come from the receiver, so chains need no annotations.
 - **Chains replace nested calls.** Every function works in chain position, `print` included, so `print(sum(set(xs)))` is `xs.to_set().sum().print()`. Adding a step means typing `.f()` at the end instead of jumping back to wrap the line in parentheses. There is no pipe or composition operator; `|x| f(g(x))` composes when a function value is needed.
 
+**Parallel iterators.** `.par()` in a chain runs the rest of the chain across all cores. It is the language's only parallel feature, with no threads, channels or `async`.
+
+```
+// AoC 2015 day 4: first number whose MD5 starts with six zeros
+ans = (1..).par().find(|n| md5("{key}{n}").starts_with("000000"))
+
+// try every obstacle position, count the ones that make the guard loop
+cells = (0..n).flat_map(|r| (0..m).map(|c| (r, c)))
+loops = cells.par().filter(|p| g[p] == '.' and loops_with(p)).count()
+```
+
+- **Same answer as without `.par()`.** Deleting `.par()` never changes the result. Ordered results keep their order: `map(...).to_array()` is in input order, and `find` and `position` return the first match by index, not whichever thread finished first. Work is split into chunks of a fixed size that does not depend on the number of cores, and partial results are combined in index order, so even a float `sum` is the same on every run and every machine.
+- **Allowed after `.par()`:** `map`, `filter`, `flat_map`, `enumerate`, then any reduce or collect step. `sum`, `product`, `min`, `max`, `count`, `any`, `all`, `find`, `position`, the `_by` forms and every collect work as they do serially. `reduce` needs an associative function, as in `reduce(+)`. The compiler cannot check that, so a non-associative one gives an unspecified result. `fold` is not allowed, because chunk results cannot be combined with its step function; use `map` and then `reduce`. Steps that depend on order across elements, such as `sort`, `scan`, `windows` or `take_while`, are compile errors after `.par()`; put them before it.
+- **Infinite ranges.** `(1..).par()` must end in `find`, `position`, `any` or `all`. Threads take chunks in order and stop once a match is found and every earlier chunk is done.
+- **Lambdas may read anything but write only their own data.** Inside a parallel step, including any function it calls, assigning to a global or a captured variable is a compile error, and so is mutating an array, map, set or record that was not created during that call. Reading captured and global data, including a large grid or map, is fine. The check is conservative: if the compiler cannot tell where a value came from, mutating it is an error. This is a stricter form of the rule fusion already uses.
+- **No stdout or stdin.** `print`, `put` and the `read_` family are compile errors in a parallel step, because their order would be random. `dbg`, `pp` and `eprint` are allowed and write whole lines to stderr, possibly interleaved.
+- **`memo` functions** called from a parallel step keep one cache per thread, so they stay correct but do not share results between threads.
+- **Traps.** If an element traps, the remaining threads stop, and the trap from the lowest index is raised in the caller, where `try` can catch it.
+- **Nesting.** A `.par()` inside a parallel step runs serially.
+- **Thread count.** One thread per core by default. `#par(threads: 4)` sets it for the program, and `#par(threads: 1)` makes every `.par()` serial, which helps when debugging.
+- **Implementation.** The runtime starts a thread pool the first time `.par()` runs. Threads claim chunks with an atomic counter, and each has its own bump allocator, so allocation needs no lock and the never-free arena stays simple. A parallel chain is compiled as one fused loop body per chunk.
+
 ## Input and output
 
 All input functions share the `read_` prefix, so there is one family to remember. Input is read in one buffered gulp and parsed from memory, which keeps it fast.
@@ -684,7 +706,7 @@ extern fn sqrt(x: float) -> float
 
 **Strings at the boundary.** There is no separate C string type. A `str` is bytes plus a length with no terminator, and a slice shares memory with its source, so passing a `str` to an `extern fn` passes a NUL-terminated copy, and a `char*` returned as `str` is copied up to its NUL. The never-free arena makes the copies harmless. A string that contains a `\0` byte would be cut short in C, so passing one traps.
 
-**Concurrency.** Out of scope for v1. The most useful later addition is `par_map`, which takes a closure that captures only immutable data. A never-free arena keeps threads simple; a garbage collector would make them harder.
+**Concurrency.** Parallel iterators (`.par()`, see Iterators and chaining) are the only concurrency. There are no user-visible threads, locks or channels. Per-thread bump allocators keep the never-free arena simple; a garbage collector would make this harder.
 
 ## Compiler architecture
 
@@ -711,7 +733,7 @@ Read the top row left to right, then the bottom row right to left. The C runtime
 4. The `read_` family, buffered output, formatting and derived printing, `dbg` and `pp`.
 5. The library in the language itself: iterators, graphs, grids and data structures.
 6. `big`, `Mod`, `rat`, matrices and the solver.
-7. FFI, then iterator fusion, then threads if wanted.
+7. FFI, then iterator fusion, then `.par()`, which builds on fusion.
 
 ## Open questions
 
