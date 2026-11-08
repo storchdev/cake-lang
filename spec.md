@@ -160,7 +160,7 @@ Numbers are statically typed machine types by default, with Python-style arithme
 4. `**` is power. An integer to an integer power stays an integer, and a negative exponent traps, except on `Mod(m)`, where `x ** -1` is the modular inverse and traps if none exists. Bit operators are `& | ^ ~ << >>`.
 5. Overflow traps, using LLVM's overflow-checking intrinsics. Code that wants wraparound, such as hashing, uses the wrapping types below instead of turning checks off.
 6. `big`, `rat` and `bigfloat` are GMP's `mpz_t`, `mpq_t` and `mpf_t`, so values cross the FFI boundary to GMP-using C code unchanged. The runtime links GMP instead of a hand-written bignum.
-7. **Conversions.** `as` converts between numeric types: `x as int` truncates a float toward zero and is range-checked. Parsing is a function named after the type: `int(s)`, `float(s)` and `big(s)`, which also work as `.map(int)` and, through uniform call syntax, as `s.int()`. `chr(b)` turns a byte into a one-character string, since `str(b)` gives its number.
+7. **Conversions.** `as` converts between numeric types: `x as int` truncates a float toward zero and is range-checked. Parsing is a function named after the type: `int(s)`, `float(s)` and `big(s)`, which also work as `.map(int)` and, through uniform call syntax, as `s.int()`. `text(b)` turns a byte into a one-character string, since `str(b)` gives its number; `text(row)` and `text(grid)` do the same for a byte array and a byte grid, which becomes lines. `text` is an ordinary overloaded function, so `b.text()` works too and you can add overloads for your own types. There is no `ord`: `'a'` is already a `u8`, so `s[i] - 'a'` needs no conversion.
 8. **Limits.** `int.max`, `int.min` and the same on every fixed-width type, plus `inf` for floats. Arithmetic past `int.max` traps, which catches a careless `dist[u] + w` on an unvisited node.
 
 **Modular arithmetic.** `Mod(m)` is a number type whose `+ - * **` are always reduced modulo `m`, so a problem that says "print the answer modulo 1,000,000,007" needs no `%` anywhere:
@@ -209,18 +209,19 @@ Strings, arrays, maps and sets are built in, homogeneous, and hashable or compar
 
 ## Strings and formatting
 
-Every string literal interpolates, like a Python f-string with no `f` prefix. The format language after the colon is based on Python's, changed where Python's rules are cryptic or surprising.
+Every string literal interpolates, like a Python f-string with no `f` prefix. The format spec after the colon covers what Python's does, but each setting is its own short word, so a spec reads left to right with no symbols to decode.
 
 ```
 "x = {x}"            // any expression inside the braces, including "{m["a"]}"
 "{x:.3}"             // 3.142: three digits after the point
-"{n:0r3}"            // 007: fill with 0, right-align, width 3
+"{n:r3 fill=0}"      // 007: right-align in width 3, padded with 0
 "{name:l10}|"        // left-align in 10
+"{n:bin r8 fill=0}"  // 00000101: binary, right-aligned in 8, padded with 0
 "{x=}"               // x=5, for debugging
 "{xs:.2}"            // [1.00, 2.50]: a spec on a container applies to each element
-"{row:c}"            // #..#.: bytes as text
+"{row:text}"         // #..#.: bytes as text
 "{state:pp}"         // pretty-printed
-"{grid:c i=4}"       // bytes as text, pretty-printed with indent 4
+"{grid:text i=4}"    // bytes as text, pretty-printed with indent 4
 "{x:.{p}}"           // precision from a variable
 r"\d+{2}"            // raw string: no interpolation, no escapes
 "{{literal}}"        // {literal}
@@ -228,39 +229,36 @@ r"\d+{2}"            // raw string: no interpolation, no escapes
 
 **Format spec**
 
-A spec is one or more words separated by spaces:
+A spec is a list of words separated by spaces. Each word sets one thing and can be recognised on its own, so the words can come in any order and each setting appears at most once.
 
 ```
-{value:format}                 {n:0r8b}
-{value:format flag option=v}   {grid:c pp}   {grid:c indent=4 lines=Many}
-{value:flag}                   {state:pp}    {state:i=4}
+{n:r3 fill=0}           {n:fill=0 r3}         // the same
+{x:.2 r10}              {n:hex}               {n:, r12}
+{grid:text pp}          {grid:text indent=4 lines=Many}
+{n:b r8 f=0}            {n:bin r8 fill=0}     // the same: words are prefix-matched
 ```
 
-- **The format word** comes first and is written without spaces, in the order `[fill][l|c|r][width][,][.N][type]`. It may be left out. A spec on an array, tuple, map or set applies to each element.
-- **Flags** are bare words. The only one is `pp`, the pretty form.
-- **Options** are `name=value`, with the same names, defaults and prefix matching as the arguments of `pp`, so `i=4` is `indent=4`. Any option turns on the pretty form, so `pp` is only needed when every option is left at its default.
-- A word with `=` in it, or a flag, is never the format word, so `{x:pp}` cannot be misread.
-- Options use `=` rather than `:` because the spec already starts after a colon. In code, `pp(x, indent: 4)` uses the usual `:`.
-
-| Spec | Example | Output | Meaning |
+| Word | Example | Output | Meaning |
 | --- | --- | --- | --- |
-| `.N` | `{x:.3}` | `3.142` | N digits after the point; `.3f` is accepted and means the same |
+| `.N` | `{x:.3}` | `3.142` | N digits after the point |
 | `lN` `cN` `rN` | `{n:r5}`, `{s:c7}` | `   42`, `  ab   ` | Left, center or right in width N |
-| fill + align | `{n:0r3}`, `{s:.l6}` | `007`, `ab....` | Pad with the fill character, which is whatever comes before `l`, `c` or `r` |
-| `x` `X` `b` `o` | `{n:0r8b}` | `00000101` | Hex, binary, octal; combine with fill and width |
-| `e` | `{x:.2e}` | `3.14e+00` | Scientific notation, only when asked for |
+| `fill=C` | `{n:r3 fill=0}`, `{s:l6 fill=.}` | `007`, `ab....` | Pad with C instead of spaces; needs an alignment |
+| `hex` `HEX` `bin` `oct` | `{n:hex}`, `{n:bin r8 fill=0}` | `ff`, `00000101` | Base 16 (lower or upper case), 2 or 8 |
+| `sci` | `{x:.2 sci}` | `3.14e+00` | Scientific notation, only when asked for |
 | `,` | `{n:,}` | `1,234,567` | Thousands separators |
-| `=` | `{x=}`, `{x=:.2}` | `x=5`, `x=3.14` | Prints the expression's text, then its value |
-| `c` | `{b:c}`, `{row:c}`, `{grid:c}` | `#`, `#..#.`, lines of text | A byte as a character; an array of bytes as text without brackets |
-| `pp`, `name=value` | `{x:pp}`, `{grid:c i=4}` | (multi-line) | Pretty form and its options; see Printing and debugging |
+| `text` | `{b:text}`, `{row:text}`, `{grid:text}` | `#`, `#..#.`, lines of text | Bytes read as characters, by calling `text(x)`; works on any type with a `text` overload |
+| `pp` | `{x:pp}` | (multi-line) | The pretty form |
+| `wrap=` `indent=` `lines=` `max=` | `{grid:text i=4}` | (multi-line) | Pretty-print options; any of them turns on the pretty form; see Printing and debugging |
+| `=` after the expression | `{x=}`, `{x=:.2}` | `x=5`, `x=3.14` | Prints the expression's text, then its value |
 
-- **Alignment is `l`, `c` or `r`,** not Python's `< ^ >`, and there is one way to write it. An alignment `c` is always followed by a width, so it cannot be confused with the type `c`. The fill character cannot be a space, since space is already the default.
-- **Width needs an alignment.** `{n:5}` and `{n:03}` are compile errors with a hint (`write {n:r5}` or `{n:0r3}`), since a bare number says nothing about which side is padded. This drops Python's hidden rule that numbers default to the right and strings to the left.
+- **Every word is prefix-matched,** like named arguments: `{n:b r8 f=0}` is `{n:bin r8 fill=0}` and `{row:t}` is `{row:text}`. The bare words `text`, `hex`, `HEX`, `bin`, `oct`, `sci` and `pp` all start with different letters, and so do the option names `fill`, `wrap`, `indent`, `lines` and `max`, so one letter is always enough. A prefix that fits two words is an error that lists them.
+- **Options are `name=value`.** They use `=` rather than `:` because the spec already starts after a colon; in code, `pp(x, indent: 4)` uses the usual `:`.
+- **`fill` takes one character,** including ones that mean something elsewhere in a spec: `fill=0`, `fill=.`, `fill=,`, `fill=#`. Space is the default, so it is never written.
+- **Width needs an alignment.** `{n:5}` and `{n:03}` are compile errors with a hint (`write {n:r5}` or `{n:r3 fill=0}`), since a bare number says nothing about which side is padded. This drops Python's hidden rule that numbers default to the right and strings to the left. Alignment is `l`, `c` or `r`, not Python's `< ^ >`.
 - **`.N` means decimal places.** In Python, `{x:.3}` means three significant digits, so `1234.5` becomes `1.23e+03`. Here it is always fixed-point. `.N` on an integer widens it to a float; on a string it is an error.
-- **Zero fill keeps the sign first.** `{-7:0r3}` is `-07`, where Python gives `0-7`.
-- **Type-checked.** The spec is checked against the value's type at compile time: `{s:x}` on a string is an error.
-- **Commas, spaces and braces.** Spaces only separate words, and the fill cannot be a space, so they never clash. A comma at the start of the format word followed by `l`, `c` or `r` is a fill (`{n:,r10}` pads with commas); anywhere else it is the thousands separator (`{n:r10,}`).
-- **Values from expressions.** Any part of a spec can be `{expr}`, as in Python: `{x:.{p}}`, `{grid:i={k}}`. This also covers values a bare word cannot hold, such as text with spaces or commas. `x.fmt(".{p}")` takes a whole spec as a string.
+- **Zero fill keeps the sign first.** `{-7:r3 fill=0}` is `-07`, where Python gives `0-7`.
+- **Type-checked.** The spec is checked against the value's type at compile time: `{s:hex}` on a string, a setting given twice, or an unknown word is an error that lists the valid words.
+- **Values from expressions.** Any part of a spec can be `{expr}`, as in Python: `{x:.{p}}`, `{s:r{w}}`, `{grid:i={k}}`, `{s:r9 fill={c}}`. This also covers a fill that is a space or a brace. `x.fmt(".{p} r10")` takes a whole spec as a string.
 - **Raw strings,** `r"..."`, have no interpolation and no escapes, for regex-like or brace-heavy text.
 - **Multi-line strings,** `"""..."""`, drop the first newline and the indentation common to every line, so they can be indented with the code. `r"""..."""` is the raw form.
 
@@ -285,7 +283,7 @@ Every value prints the way it would be written in code, so what you read back is
 | Map, set | `{1: "a", 2: "b"}`, `set(1, 2)` |
 | Optional, bool | the value or `null`, `true` |
 
-- **Bytes print as numbers**, since a `u8` may be a count as easily as a character. `{b:c}` prints one as a character, `{row:c}` prints a byte array as text and `{grid:c}` a byte grid as lines; `chr(b)` converts one byte to a string.
+- **Bytes print as numbers**, since a `u8` may be a count as easily as a character. `{b:text}` prints one as a character, `{row:text}` prints a byte array as text and `{grid:text}` a byte grid as lines; `b.text()` gives the same string in code.
 - **Strings are quoted inside containers, not at the top level.** `print("hi")` prints `hi`, while `print(["hi"])` prints `["hi"]`, which makes a `"1"` versus `1` bug visible.
 - **Maps and sets print in sorted key order** when their keys are comparable, so output is deterministic.
 - **Cycles** through records print as `<cycle Node>` instead of looping forever.
@@ -298,7 +296,7 @@ Every value prints the way it would be written in code, so what you read back is
 dbg(x)                      // [line 12] x = 5, and returns x
 total = xs.map(f).dbg().sum()   // [line 13] xs.map(f) = [...], mid-chain
 pp(state)                   // pretty-printed
-pp(row, "c", lines: Many)   // element spec, then options
+pp(row, "text", lines: Many)  // element spec, then options
 eprint("dist", d)           // print, but to stderr
 ```
 
@@ -323,7 +321,7 @@ s = state.pretty(lines: Many)         // the pretty form as a string
 | `lines` | `Auto` breaks only when too wide; `One` never breaks; `Many` always does | `Auto` |
 | `max` | Most elements shown per container, as in `[3, 1, 4, ... 99,950 more]` | 100 |
 
-The names start with different letters, so each can be shortened to one: `w`, `i`, `l`, `m`. The line width is called `wrap` so it is not confused with the padding width in a format word.
+The names start with different letters, so each can be shortened to one: `w`, `i`, `l`, `m`. The line width is called `wrap` so it is not confused with the padding width `r10` in a format spec.
 
 - `One`, `Many` and `Auto` are the field-less variants of a built-in `type Lines = One | Many | Auto`, so they need no quotes.
 - `x.pretty(...)` returns the pretty form as a string, and `pp(x, ...)` writes `x.pretty(...)` to stderr.
