@@ -192,13 +192,18 @@ Strings, arrays, maps and sets are built in, homogeneous, and hashable or compar
 | --- | --- | --- |
 | String `str` | `"abc"`, `"x = {x}"`, `r"raw"` | Immutable bytes; every literal interpolates; see Strings and formatting |
 | Array `[T]` | `[1, 2, 3]` | Growable and bounds-checked; `a[-1]` is the last element; `a[i..j]` slices; `+` concatenates and `* n` repeats |
-| Map `{K: V}` | `{1: "a"}` | Hash map; keys may be ints, strings or tuples |
+| Map `{K: V}` | `{1: "a"}` | Hash map; any value without closures can be a key, hashed by its contents |
 | Set | `set(1, 2, 3)` | Hash set; `x in s` tests membership; `\| & - ^` are union, intersection, difference and symmetric difference |
 | Deque, priority queue | `deque()`, `heap()` | Library types; `heap` is a min-heap with an optional key function |
 | Ordered map and set | `omap()`, `oset()` | Sorted keys with `lower_bound`, which Python lacks |
 
 **Conventions**
 
+- **Arrays, maps and sets are references,** like records: `b = a` and passing to a function share one collection, and a change through either name shows in both. `a += [x]` appends in place, like `push`, so an alias sees it too. Strings are immutable, so `s += "x"` always makes a new string.
+- **Copying.** `x.copy()` copies `x` and every array, map, set and tuple inside it, all the way down, so `g2 = g.copy()` on a grid gives independent rows. Records inside are still shared. Two named arguments change that:
+  - `depth: n` stops after `n` levels, so `a.copy(depth: 1)` is a shallow copy that shares its elements.
+  - `records: true` copies records too, which makes a full deep copy. Objects reached twice are copied once, so shared structure and cycles are kept.
+  - The value `.copy()` is called on is always copied, even when it is a record. Numbers, strings and closures are never copied, since they are immutable or shared by design.
 - `x in coll` works for arrays, strings, sets and map keys.
 - **Negative indices are literal only.** `a[-1]` and `a[-2..]` count from the end, but a computed index that comes out negative traps, so `dp[i - 1]` at `i = 0` is an error instead of a silent read of the last element.
 - **A lookup that can miss returns an optional:** `m.get(k)`, `s.find(x)`, `a.find(pred)`, `a.position(pred)` and `bsearch`. `min` and `max` of an empty collection trap, as in Python.
@@ -216,14 +221,14 @@ Every string literal interpolates, like a Python f-string with no `f` prefix. Th
 ```
 "x = {x}"            // any expression inside the braces, including "{m["a"]}"
 "{x:.3}"             // 3.142: three digits after the point
-"{n:r3 fill=0}"      // 007: right-align in width 3, padded with 0
+"{n:r3 fill0}"       // 007: right-align in width 3, padded with 0
 "{name:l10}|"        // left-align in 10
-"{n:bin r8 fill=0}"  // 00000101: binary, right-aligned in 8, padded with 0
+"{n:bin r8 fill0}"   // 00000101: binary, right-aligned in 8, padded with 0
 "{x=}"               // x=5, for debugging
 "{xs:.2}"            // [1.00, 2.50]: a spec on a container applies to each element
 "{row:text}"         // #..#.: bytes as text
 "{state:pp}"         // pretty-printed
-"{grid:text i=4}"    // bytes as text, pretty-printed with indent 4
+"{grid:text i4}"     // bytes as text, pretty-printed with indent 4
 "{x:.{p}}"           // precision from a variable
 r"\d+{2}"            // raw string: no interpolation, no escapes
 "{{literal}}"        // {literal}
@@ -234,33 +239,34 @@ r"\d+{2}"            // raw string: no interpolation, no escapes
 A spec is a list of words separated by spaces. Each word sets one thing and can be recognised on its own, so the words can come in any order and each setting appears at most once.
 
 ```
-{n:r3 fill=0}           {n:fill=0 r3}         // the same
+{n:r3 fill0}            {n:fill0 r3}          // the same
 {x:.2 r10}              {n:hex}               {n:, r12}
-{grid:text pp}          {grid:text indent=4 lines=Many}
-{n:b r8 f=0}            {n:bin r8 fill=0}     // the same: words are prefix-matched
+{grid:text pp}          {grid:text indent4 many}
+{n:b r8 f0}             {n:bin r8 fill0}      // the same: words are prefix-matched
 ```
 
 | Word | Example | Output | Meaning |
 | --- | --- | --- | --- |
 | `.N` | `{x:.3}` | `3.142` | N digits after the point |
 | `lN` `cN` `rN` | `{n:r5}`, `{s:c7}` | `   42`, `  ab   ` | Left, center or right in width N |
-| `fill=C` | `{n:r3 fill=0}`, `{s:l6 fill=.}` | `007`, `ab....` | Pad with C instead of spaces; needs an alignment |
-| `hex` `HEX` `bin` `oct` | `{n:hex}`, `{n:bin r8 fill=0}` | `ff`, `00000101` | Base 16 (lower or upper case), 2 or 8 |
+| `fillC` | `{n:r3 fill0}`, `{s:l6 fill.}` | `007`, `ab....` | Pad with C instead of spaces; needs an alignment |
+| `hex` `HEX` `bin` `oct` | `{n:hex}`, `{n:bin r8 fill0}` | `ff`, `00000101` | Base 16 (lower or upper case), 2 or 8 |
 | `sci` | `{x:.2 sci}` | `3.14e+00` | Scientific notation, only when asked for |
 | `,` | `{n:,}` | `1,234,567` | Thousands separators |
 | `text` | `{b:text}`, `{row:text}`, `{grid:text}` | `#`, `#..#.`, lines of text | Bytes read as characters, by calling `text(x)`; works on any type with a `text` overload |
 | `pp` | `{x:pp}` | (multi-line) | The pretty form |
-| `wrap=` `indent=` `lines=` `max=` | `{grid:text i=4}` | (multi-line) | Pretty-print options; any of them turns on the pretty form; see Printing and debugging |
+| `wrapN` `indentN` `maxN` | `{grid:text i4}` | (multi-line) | Pretty-print options; any of them turns on the pretty form; see Printing and debugging |
+| `one` `many` `auto` | `{state:many}` | (multi-line) | The `lines` option: never break, always break, or break when too wide |
 | `=` after the expression | `{x=}`, `{x=:.2}` | `x=5`, `x=3.14` | Prints the expression's text, then its value |
 
-- **Every word is prefix-matched,** like named arguments: `{n:b r8 f=0}` is `{n:bin r8 fill=0}` and `{row:t}` is `{row:text}`. The bare words `text`, `hex`, `HEX`, `bin`, `oct`, `sci` and `pp` all start with different letters, and so do the option names `fill`, `wrap`, `indent`, `lines` and `max`, so one letter is always enough. A prefix that fits two words is an error that lists them.
-- **Options are `name=value`.** They use `=` rather than `:` because the spec already starts after a colon; in code, `pp(x, indent: 4)` uses the usual `:`.
-- **`fill` takes one character,** including ones that mean something elsewhere in a spec: `fill=0`, `fill=.`, `fill=,`, `fill=#`. Space is the default, so it is never written.
-- **Width needs an alignment.** `{n:5}` and `{n:03}` are compile errors with a hint (`write {n:r5}` or `{n:r3 fill=0}`), since a bare number says nothing about which side is padded. This drops Python's hidden rule that numbers default to the right and strings to the left. Alignment is `l`, `c` or `r`, not Python's `< ^ >`.
+- **Values are glued on.** A word that takes a value is written with the value attached, the way `r3` and `.3` already work: `fill0`, `indent4`, `wrap120`, `max20`. There is no punctuation inside a spec, so the `:` after the expression is the only colon.
+- **Every word is prefix-matched,** like named arguments: `{n:b r8 f0}` is `{n:bin r8 fill0}`, `{row:t}` is `{row:text}` and `{x:i4 w120}` is `{x:indent4 wrap120}`. A word with a value attached only matches names that take a value, and a bare word only matches names that do not, so `m20` is `max20` while `m` alone is `many`. Most words need one letter; `oct` and `one` need two (`oc`, `on`). A prefix that fits two words is an error that lists them.
+- **`fill` takes the word's last character** as its value, including characters that mean something elsewhere in a spec: `fill0`, `fill.`, `fill,`, `fill#`, `f*`. Everything before that character must be a prefix of `fill`. Space is the default, so it is never written; a fill from a variable uses `fill{c}`.
+- **Width needs an alignment.** `{n:5}` and `{n:03}` are compile errors with a hint (`write {n:r5}` or `{n:r3 fill0}`), since a bare number says nothing about which side is padded. This drops Python's hidden rule that numbers default to the right and strings to the left. Alignment is `l`, `c` or `r`, not Python's `< ^ >`.
 - **`.N` means decimal places.** In Python, `{x:.3}` means three significant digits, so `1234.5` becomes `1.23e+03`. Here it is always fixed-point. `.N` on an integer widens it to a float; on a string it is an error.
-- **Zero fill keeps the sign first.** `{-7:r3 fill=0}` is `-07`, where Python gives `0-7`.
+- **Zero fill keeps the sign first.** `{-7:r3 fill0}` is `-07`, where Python gives `0-7`.
 - **Type-checked.** The spec is checked against the value's type at compile time: `{s:hex}` on a string, a setting given twice, or an unknown word is an error that lists the valid words.
-- **Values from expressions.** Any part of a spec can be `{expr}`, as in Python: `{x:.{p}}`, `{s:r{w}}`, `{grid:i={k}}`, `{s:r9 fill={c}}`. This also covers a fill that is a space or a brace. `x.fmt(".{p} r10")` takes a whole spec as a string.
+- **Values from expressions.** Any part of a spec can be `{expr}`, as in Python: `{x:.{p}}`, `{s:r{w}}`, `{grid:i{k}}`, `{s:r9 fill{c}}`. This also covers a fill that is a space or a brace. `x.fmt(".{p} r10")` takes a whole spec as a string.
 - **Raw strings,** `r"..."`, have no interpolation and no escapes, for regex-like or brace-heavy text.
 - **Multi-line strings,** `"""..."""`, drop the first newline and the indentation common to every line, so they can be indented with the code. `r"""..."""` is the raw form.
 
@@ -311,8 +317,8 @@ eprint("dist", d)           // print, but to stderr
 #pp(indent: 4, wrap: 120)             // default for the whole program
 pp(state, lines: Many, max: 20)       // this call only
 pp(state, l: Many, m: 20)             // the same, with shortened names
-"{state:lines=Many max=20}"           // the same options inside a string
-"{state:l=Many m=20}"                 // shortened there too
+"{state:many max20}"                  // the same options inside a string
+"{state:m m20}"                       // shortened there too
 s = state.pretty(lines: Many)         // the pretty form as a string
 ```
 
@@ -323,7 +329,7 @@ s = state.pretty(lines: Many)         // the pretty form as a string
 | `lines` | `Auto` breaks only when too wide; `One` never breaks; `Many` always does | `Auto` |
 | `max` | Most elements shown per container, as in `[3, 1, 4, ... 99,950 more]` | 100 |
 
-The names start with different letters, so each can be shortened to one: `w`, `i`, `l`, `m`. The line width is called `wrap` so it is not confused with the padding width `r10` in a format spec.
+In code, the names start with different letters, so each can be shortened to one: `w`, `i`, `l`, `m`. Inside a string, values are glued on (`wrap120`, `i4`, `m20`), and `lines` is written as just its value: `one`, `many` or `auto`. The line width is called `wrap` so it is not confused with the padding width `r10` in a format spec.
 
 - `One`, `Many` and `Auto` are the field-less variants of a built-in `type Lines = One | Many | Auto`, so they need no quotes.
 - `x.pretty(...)` returns the pretty form as a string, and `pp(x, ...)` writes `x.pretty(...)` to stderr.
@@ -370,9 +376,9 @@ Tuples are immutable values and records are mutable references, following Python
 - **Tuples are vectors.** On tuples of numbers with the same shape, `+` and `-` work element by element, `*` and `//` by a number scale, and `-p` negates, so grid movement is `np = p + d`. A `[[T]]` grid can be indexed by a pair, `g[p]` for `g[p.0][p.1]`. Comparison stays lexicographic. Arrays do not do this, since `+` already concatenates them and `*` repeats them; numeric vectors of any length belong to the matrix library.
 - **Changing one field:** `p.with(x: 5)` returns a copy of a tuple or record with that field replaced, since tuples cannot be mutated.
 - **Equality, hash, order and printing** are derived structurally for every tuple and record. Override them with the hooks described under overloading.
-- **Assignment never copies.** `b = a` makes two names for one record, and passing to a function passes the reference. Use `.copy()` for a shallow copy and `.deepcopy()` for a full one.
+- **Assignment never copies.** `b = a` makes two names for one record, and passing to a function passes the reference. Arrays, maps and sets work the same way. See Copying under Built-in collections for `.copy()`.
 - **Recursive types need no special handling,** since a record is already a reference: `record Node(val, left, right)` with `left` and `right` holding a `Node` or `null` just works, and field types are inferred.
-- **Safe as keys.** `(r, c)` works as a map key or set element. A tuple that holds an array still shares that array, like Go slices. Using a record type as a map key or set element is a warning, because mutating a record after inserting it breaks the map; use a tuple instead.
+- **Keys are hashed by contents.** Tuples, arrays and records all work as map keys and set elements, compared and hashed structurally, so `seen.add(state)` works whether `state` is a tuple or an array. Keys are not copied on insert. Mutating an array or record after using it as a key breaks the map, so copy it first if it will change: `seen.add(state.copy())`. A `--debug` build checks each key's hash on lookup and when the table grows, and traps with kind `"key"` if a key was changed after insertion. A tuple that holds an array still shares that array, like Go slices.
 - **C compatibility:** records pass to C by pointer and named tuples by value; see the FFI section.
 
 **Variant types**
@@ -447,6 +453,9 @@ Functions are first-class, and any function can be called as a method on its fir
 
 **Default and named arguments.** `fn f(a, k = 1)` gives `k` a default, and a caller can name any argument after the positional ones: `heap(key: -it)`, `t.show(label: |v| "{v}")`. The library relies on this for optional arguments such as `read_ints()` without a count.
 
+- **Defaults are evaluated on every call** that leaves them out, never once at definition, so `fn walk(u, seen = set())` gets a fresh set each time. This avoids Python's shared mutable default.
+- A default may use earlier parameters: `fn sub(a, lo = 0, hi = a.len())`.
+
 **Shortened argument names.** A named argument can be any prefix that picks out exactly one parameter, so nobody has to remember whether it was `address` or `addr`:
 
 ```
@@ -518,7 +527,7 @@ total = shapes.map(area).sum()        // each element calls its own overload
 - **Optionals are not variants.** A `Shape?` must be narrowed with a `null` check first.
 - **Cost:** one branch on the tag, the same code a hand-written `match` produces.
 
-**Memoization.** A `memo` modifier before `fn` caches results by arguments, which covers most dynamic programming. The cache does not see globals the function reads, so with several test cases call `f.clear()` before each one.
+**Memoization.** A `memo` modifier before `fn` caches results by arguments, which covers most dynamic programming. Array, map and set arguments are copied into the cache key, so a caller that mutates its state after the call, as in backtracking, cannot corrupt the cache. The cache does not see globals the function reads, so with several test cases call `f.clear()` before each one.
 
 ## Imports
 
