@@ -4,7 +4,7 @@ Nov 2, 2026 · @Hudson Shi
 
 ## Goals and principles
 
-This is a statically typed, compiled language for competitive programming and Advent of Code, built to get from idea to accepted solution with the least friction. It targets LLVM and is not meant for large, durable software, though a program can import helper files of its own.
+This is a statically typed, compiled language for competitive programming and Advent of Code, built to get from idea to accepted solution with the least friction. It compiles to C and is not meant for large, durable software, though a program can import helper files of its own.
 
 **Goals**
 
@@ -118,7 +118,7 @@ try { run() } catch e { if e.kind != "eof" { raise e } }   // rethrow
 - **Bare `try expr`** yields `T?`, with `null` if `expr` traps. It binds tighter than `??`, so `try int(s) ?? 0` reads as expected.
 - **`raise "msg"`** has type never, so it fits any branch. `raise e` rethrows a caught error unchanged.
 - **`assert(cond, msg)`** is a library function, not a keyword. It traps with kind `"assert"` when `cond` is false, and `msg` is optional.
-- **Implementation.** The runtime never frees, so unwinding has no cleanup to do and `setjmp`/`longjmp` in the C runtime is enough; no LLVM landing pads are needed. Each `try` body compiles to a closure called through `rt_try(fn, env)`, so locals it touches already live in the closure environment and `longjmp` cannot clobber them. Code outside a `try` pays nothing.
+- **Implementation.** The runtime never frees, so unwinding has no cleanup to do and `setjmp`/`longjmp` in the C runtime is enough; no unwind tables or landing pads are needed. Each `try` body compiles to a closure called through `rt_try(fn, env)`, so locals it touches already live in the closure environment and `longjmp` cannot clobber them. Code outside a `try` pays nothing.
 - **Stack overflow** from deep recursion is not catchable. The runtime runs the program on a large stack and reports `stack overflow` through a `sigaltstack` handler instead of a bare segfault.
 
 **Optionals**
@@ -158,7 +158,7 @@ Numbers are statically typed machine types by default, with Python-style arithme
 2. Implicit widening only: `u8` to `int` to `float`, and `int` to `big`, `Mod(m)` or `rat`, so `x: big = 1` and `total + count` just work. Arithmetic on integer types narrower than `int` promotes to `int`, so `s[i] - '0'` is an `int`, and storing back into a narrow slot is range-checked. Lengths and indices are `int`, so `i < a.len()` never mixes signed and unsigned. Narrowing and mixing signed with unsigned are compile errors; use `as`.
 3. `/` always yields a float, `//` is floor division, and `%` takes the sign of the divisor, so `-7 % 3 == 2`.
 4. `**` is power. An integer to an integer power stays an integer, and a negative exponent traps, except on `Mod(m)`, where `x ** -1` is the modular inverse and traps if none exists. Bit operators are `& | ^ ~ << >>`.
-5. Overflow traps, using LLVM's overflow-checking intrinsics. Code that wants wraparound, such as hashing, uses the wrapping types below instead of turning checks off.
+5. Overflow traps, using checked arithmetic in the generated C (see Compiler architecture). Code that wants wraparound, such as hashing, uses the wrapping types below instead of turning checks off.
 6. `big`, `rat` and `bigfloat` are GMP's `mpz_t`, `mpq_t` and `mpf_t`, so values cross the FFI boundary to GMP-using C code unchanged. The runtime links GMP instead of a hand-written bignum.
 7. **Conversions.** `as` converts between numeric types: `x as int` truncates a float toward zero and is range-checked. Parsing is a function named after the type: `int(s)`, `float(s)` and `big(s)`, which also work as `.map(int)` and, through uniform call syntax, as `s.int()`. `text(b)` turns a byte into a one-character string, since `str(b)` gives its number; `text(row)` and `text(grid)` do the same for a byte array and a byte grid, which becomes lines. `text` is an ordinary overloaded function, so `b.text()` works too and you can add overloads for your own types. There is no `ord`: `'a'` is already a `u8`, so `s[i] - 'a'` needs no conversion.
 8. **Limits.** `int.max`, `int.min` and the same on every fixed-width type, plus `inf` for floats. Arithmetic past `int.max` traps, which catches a careless `dist[u] + w` on an unvisited node.
@@ -180,7 +180,7 @@ type R = Mod(m)
 - The modulus is evaluated exactly, so `Mod(1e9 + 7)` and `Mod(2**64)` are fine even though `2**64` does not fit in an `int`.
 - **Wrapping types.** `wrap8`, `wrap16`, `wrap32` and `wrap64` are built-in aliases for `Mod(2**8)` to `Mod(2**64)`. They compile to plain machine arithmetic that wraps around, which is what hashing wants: `h: wrap64 = 0; for b in s.bytes() { h = h * 131 + b }`.
 - Values are plain integers, and the modulus lives with the type, so `[Mod(m)]` is as compact as `[int]`.
-- A modulus known at compile time lets LLVM replace division with multiplication. A modulus read at run time uses Barrett reduction with a constant computed once, which is close in speed.
+- A modulus known at compile time lets the C compiler replace division with multiplication. A modulus read at run time uses Barrett reduction with a constant computed once, which is close in speed.
 
 ## Built-in collections
 
@@ -679,7 +679,7 @@ extern fn sqrt(x: float) -> float
 | `str` | NUL-terminated `char*` | v1; see below |
 | Array `[T]` | `T*` plus length | v1 |
 | Record, or named tuple by pointer | `struct*` | v1 |
-| Named tuple by value | C struct passed by value | Later; needs C ABI classification, which clang normally does for you |
+| Named tuple by value | C struct passed by value | v1; the generated C passes the struct, so the C compiler handles the ABI |
 | `big` | GMP's `mpz_t` layout, passed by pointer | v1 |
 
 **Strings at the boundary.** There is no separate C string type. A `str` is bytes plus a length with no terminator, and a slice shares memory with its source, so passing a `str` to an `extern fn` passes a NUL-terminated copy, and a `char*` returned as `str` is copied up to its NUL. The never-free arena makes the copies harmless. A string that contains a `\0` byte would be cut short in C, so passing one traps.
@@ -688,7 +688,7 @@ extern fn sqrt(x: float) -> float
 
 ## Compiler architecture
 
-The compiler is a short pipeline that emits textual LLVM IR and lets `clang` finish the job.
+The compiler is a short pipeline that emits one C file and lets a C compiler finish the job.
 
 &#91;embedded content: compiler pipeline · 7 stages plus the C runtime\]
 
@@ -696,10 +696,12 @@ Read the top row left to right, then the bottom row right to left. The C runtime
 
 **Choices**
 
-- **Implementation language:** Rust using only `std` is the recommended path, since enums and `match` suit ASTs and type passes. C works too, with an arena allocator that never frees.
-- **LLVM:** emit `.ll` text and call `clang`. No bindings are needed, and the output is readable when debugging.
+- **Implementation language:** Nim. Variant objects and `case` suit ASTs and type passes, and Nim itself compiles to C, so its output is a working reference for closures, name mangling and unwinding.
+- **C backend:** emit plain C and call a C compiler. No bindings are needed, the output is readable when debugging, and the C compiler handles the platform ABI, so FFI structs passed by value work in v1.
+- **C compiler:** `gcc` or `clang` at `-O2`, using GNU C extensions freely: `__builtin_*_overflow` for checked arithmetic, `unsigned __int128` for `Mod(m)` multiplication and Barrett reduction, statement expressions and computed `goto`. Portability to compilers without these extensions is not a goal. The runtime is built once and linked in.
+- **Avoiding C's undefined behavior.** Signed overflow is always checked or done in unsigned arithmetic, shift amounts are masked, and the C compiler runs with `-fwrapv -fno-strict-aliasing`. `#line` directives point C compiler errors, debuggers and sanitizers at the source file, and a debug build adds `-fsanitize=address,undefined`.
 - **Runtime in C:** hash map, fast stdin, the allocator and `setjmp`-based `try`, plus GMP for big numbers.
-- **Lowering:** mutable variables use `alloca` and LLVM's `mem2reg` builds SSA; closures use environment structs; trapping arithmetic uses overflow intrinsics.
+- **Lowering:** variables are C locals; closures are an environment struct plus a function pointer; records are structs behind pointers, and named tuples are structs by value.
 
 **Milestones**
 
