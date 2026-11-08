@@ -31,7 +31,7 @@ This is a statically typed, compiled language for competitive programming and Ad
 
 ## Syntax basics
 
-Braces delimit blocks, and newlines or optional semicolons end statements. Functions and lambdas follow one rule: an `= expr` or `|x| expr` body returns its expression, and a braced body uses `return`. Other braced blocks used as values, in `if`, `match` and `try`, yield their last expression. A program is a file of top-level statements and functions, run in order, with no `main`. It can import other files; see Imports.
+Braces delimit blocks, and newlines or optional semicolons end statements. A braced block is an expression whose value is its last expression, everywhere: function and lambda bodies, `if`, `match` and `try`. `return` is for leaving a function early. A program is a file of top-level statements and functions, run in order, with no `main`. It can import other files; see Imports.
 
 ```
 // assignment declares a variable the first time; types are inferred
@@ -39,16 +39,16 @@ n = read_int()
 total = 0
 for i in 0..n { total += i * i }
 
-// two function forms
-fn sq(x) = x * x          // expression body: its value is returned
-fn index_of(arr, t) {     // braced body: statements, explicit return
+// one function form: `=` and an expression, which may be a block
+fn sq(x) = x * x
+fn index_of(arr, t) = {   // a block's value is its last expression
   for i in 0..arr.len() {
-    if arr[i] == t { return i }
+    if arr[i] == t { return i }   // return leaves the function early
   }
-  return null             // so index_of returns int?
+  null                    // so index_of returns int?
 }
 
-f = |a, b| a + b
+f = (a, b) => a + b
 label = if total > 9 { "big" } else { "small" }
 a, b = b, a + b           // parallel assignment
 if 0 <= r < n { ... }     // chained comparison
@@ -57,15 +57,17 @@ outer: for r in 0..n {    // labeled loop
 }
 ```
 
-- **Semicolons and line breaks.** `;` ends a statement anywhere a newline would, so one-liners work: `for i in 0..n { s += a[i]; t ^= a[i] }` and `fn f(x) { y = x * 2; return y + 1 }`. A trailing `;` is allowed and changes nothing, so `{ print(x); 0; }` still yields `0`. A statement that starts with `if`, `for`, `while`, `match`, `try` or `fn` and ends with its closing `}` needs no `;` before the next statement on the same line: `for x in a { s += x } print(s)`. Any other statement, such as an assignment whose value is an `if`, still needs one. A newline does not end a statement inside `( )` or `[ ]`, after a binary operator or comma, or before a line that starts with `.`, so chains and long expressions can be broken across lines.
+- **Semicolons and line breaks.** `;` ends a statement anywhere a newline would, so one-liners work: `for i in 0..n { s += a[i]; t ^= a[i] }` and `fn f(x) = { y = x * 2; y + 1 }`. A trailing `;` is allowed and changes nothing, so `{ print(x); 0; }` still yields `0`. A statement that starts with `if`, `for`, `while`, `match`, `try` or `fn` and ends with its closing `}` needs no `;` before the next statement on the same line: `for x in a { s += x } print(s)`. Any other statement, such as an assignment whose value is an `if`, still needs one. A newline does not end a statement inside `( )` or `[ ]`, after a binary operator, `=`, `=>` or comma, or before a line that starts with `.`, so chains and long expressions can be broken across lines.
 - **Trailing separators.** Every comma-separated list allows a trailing comma: array, map and set literals, tuples, call arguments, parameter lists, record and variant fields, patterns, type syntax and import selectors such as `import geom.{dist, Point,}`. This makes one-item-per-line lists easy to reorder. A trailing comma never changes meaning, and there are no one-element tuples, so `(x,)` is a compile error rather than Python's 1-tuple. `match` arms separated by `;` allow a trailing `;` too, and a variant list may start with `|`.
 - **Bindings:** `x = expr` declares `x` the first time and reassigns it afterwards. Assigning to a name that exists in an enclosing scope of the same function, including one captured by a lambda, reassigns it; otherwise it declares a new local. `let x = expr` is optional and always creates a new binding in the current scope, which is how to shadow. Destructuring needs no parentheses: `a, b = b, a + b` evaluates the right side first. The compiler warns about a variable that is assigned but never read, which catches typos. There is no `const`.
 - **Control flow:** `if`/`else`, `match` and `try`/`catch` are expressions; `while`, `for x in iterable`, `break` and `continue` are statements. `for` destructures: `for (u, v) in edges`, `for (k, v) in m`, `for (i, x) in a.enumerate()`. Each iteration gets a fresh loop variable, so a closure made inside the loop keeps that iteration's value, not the last one.
 - **Labeled loops:** `outer: for ...` names a loop, and `break outer` or `continue outer` acts on it from any depth.
 - **Chained comparisons:** `0 <= r < n` means `0 <= r and r < n`, with `r` evaluated once.
 - **Ranges:** `a..b` excludes `b`, `a..=b` includes it, and both are lazy. `a..` has no end, so `for t in 1.. { ... }` loops until `break`. Slices may leave out either end: `a[i..]`, `a[..j]`.
-- **Function and lambda bodies:** one rule for both. `fn name(args) = expr` and `|x| expr` return `expr`. `fn name(args) { ... }` and `|x| { ... }` are blocks of statements with no implicit return, so they use `return`. Falling off the end returns nothing (unit, which is not `null`, so `x = print(1)` is an error), and it is an error if some paths return a value and others do not.
-- **`return`** exits the function with a value and has type never, so `x = if ok { 5 } else { return -1 }` type-checks. The return type unifies every `return` and, for expression-bodied functions, the body. Inside a lambda, `return` exits the lambda only.
+- **Blocks are expressions.** `{ ... }` runs its statements, and its value is its last expression. A block that ends in a statement, such as a `for` loop or an assignment, has no value (unit, which is not `null`, so `x = print(1)` is an error). The rule is the same for function bodies, lambda bodies, `if`, `match` and `try`.
+- **Functions** are `fn name(args) = expr`, and a longer body is a block: `fn f(x) = { ... }`. There is no second form; `fn f(x) { ... }` without the `=` is an error with a hint. Lambdas, `(args) => expr`, follow the same rule; see Closures.
+- **Where `{` starts a block.** After `fn ... =`, after `=>`, after a match arm's colon, and after the head of `if`, `else`, `while`, `for`, `match`, `try` or `catch`, `{` always starts a block. A map literal in one of those places needs parentheses: `fn empty() = ({})`. Anywhere else in an expression, `{` starts a map literal if it is empty or holds `key: value` entries, and a shorthand closure otherwise (see Closures). So there is no bare block as a value: `x = { a + 1 }` is a closure, not a number.
+- **`return`** leaves the function early with a value and has type never, so `x = if ok { 5 } else { return -1 }` type-checks. The return type unifies every `return` with the body's value. A `return` on the last line is allowed but never needed. It is an error if some paths produce a value and others do not. Inside a lambda, `return` exits the lambda only.
 - **Top level and scope.** Top-level variables are globals, visible inside every function, so input read at the top can be used by `fn dfs(u)` below it. Functions can be called before the line that defines them. Reading a global before its first assignment, as when a function runs above the line that sets it, traps with kind `"unset"` and names the variable. A `fn` may also be defined inside another function, where it can recurse and captures variables by reference like a lambda.
 - **Comments:** `//` to the end of the line.
 
@@ -76,7 +78,7 @@ Types are inferred with Hindley-Milner-style unification, so users almost never 
 - **Implicit generics.** A function with unconstrained parameters is generic: `fn swap(p) = (p.1, p.0)` works for any pair. Each call site gets its own specialized copy (monomorphization), so there is no runtime cost.
 - **Template-style operator checks.** Inside a generic body, `a + b` is resolved when the function is instantiated with concrete types. So `fn add(a, b) = a + b` works for ints, floats and strings, and `add([1], 5)` is an error at the call. Mixed `int` and `float` arguments apply the numeric widening rule.
 - **Trade-off.** Errors in generic code appear at the call site, and a generic function nobody calls is never fully checked. The library therefore needs a test file that calls every function.
-- **Chaining helps inference.** The receiver is checked before the arguments, so in `pts.map(|p| p.x)` the element type of `pts` is known when the lambda is checked. A bare `f = |p| p.x` that is never used is an error.
+- **Chaining helps inference.** The receiver is checked before the arguments, so in `pts.map(p => p.x)` the element type of `pts` is known when the lambda is checked. A bare `f = p => p.x` that is never used is an error.
 - **Empty literals** such as `[]` and `{}` take their type from later use, and it is an error if none is found.
 - **Field access is structural.** `fn norm(p) = p.x*p.x + p.y*p.y` works on any tuple or record that has `x` and `y`; the field is checked at instantiation.
 - **Optionals.** `T?` is a value or `null`, and whether a slot is optional is inferred; see Errors and optionals.
@@ -130,7 +132,7 @@ try { run() } catch e { if e.kind != "eof" { raise e } }   // rethrow
 ```
 best = null                     // best: int?, from later use
 for x in xs { if best == null or x < best { best = x } }
-fn index_of(arr, t) { ... return i ... return null }   // returns int?
+fn index_of(arr, t) = { ... return i ... null }   // returns int?
 record Node(val, left, right)   // Node(1, null, null) makes left and right Node?
 ```
 
@@ -178,7 +180,7 @@ n, m = read_ints(2)                 // a modulus given in the input
 type R = Mod(m)
 ```
 
-- `m` must be a literal or a top-level variable that is never reassigned, so a `Mod(m)` type always means one modulus. A function parameter is not allowed: `fn f(m) { x: Mod(m) = 5; return x }` would let `f(7) + f(11)` add values reduced by different moduli under one type. `Mod(p)` and `Mod(q)` are different types, so mixing them is a compile error.
+- `m` must be a literal or a top-level variable that is never reassigned, so a `Mod(m)` type always means one modulus. A function parameter is not allowed: `fn f(m) = { x: Mod(m) = 5; x }` would let `f(7) + f(11)` add values reduced by different moduli under one type. `Mod(p)` and `Mod(q)` are different types, so mixing them is a compile error.
 - The modulus is evaluated exactly, so `Mod(1e9 + 7)` and `Mod(2**64)` are fine even though `2**64` does not fit in an `int`.
 - **Wrapping types.** `wrap8`, `wrap16`, `wrap32` and `wrap64` are built-in aliases for `Mod(2**8)` to `Mod(2**64)`. They compile to plain machine arithmetic that wraps around, which is what hashing wants: `h: wrap64 = 0; for b in s.bytes() { h = h * 131 + b }`.
 - Values are plain integers, and the modulus lives with the type, so `[Mod(m)]` is as compact as `[int]`.
@@ -347,7 +349,7 @@ These are library functions in the language itself, called as methods. They prin
   .##..
   ```
 
-- **Trees.** `t.show()` draws a tree like the `tree` command, and `t.show(|v| "{v}: {val[v]}")` labels each node.
+- **Trees.** `t.show()` draws a tree like the `tree` command, and `t.show(v => "{v}: {val[v]}")` labels each node.
 
   ```
   1
@@ -357,7 +359,7 @@ These are library functions in the language itself, called as methods. They prin
   └── 3
   ```
 
-  It works on library trees (`tree(n)`), and on recursive records and variants with no extra code: the compiler already derives their printing and knows which fields refer back to the same type, so `show(root)` draws a binary search tree or an expression tree directly. For anything else, `show_tree(root, |n| n.kids)` takes a function that returns the children.
+  It works on library trees (`tree(n)`), and on recursive records and variants with no extra code: the compiler already derives their printing and knows which fields refer back to the same type, so `show(root)` draws a binary search tree or an expression tree directly. For anything else, `show_tree(root, n => n.kids)` takes a function that returns the children.
 - **Graphs.** `g.show()` prints adjacency lists, one node per line, such as `1 -> 2 (w=5), 3`. `g.dot()` returns Graphviz text for larger graphs. Drawing arbitrary graphs as 2D text is a hard layout problem and out of scope; a layered drawing for small DAGs may come later.
 
 ## Tuples, named tuples and records
@@ -434,7 +436,7 @@ d = match m.get(k) { null: 0; v if v > 0: v; _: -1 }
 - **Arm syntax** is `pattern: body`, like Python's `case pattern:` without the keyword. The colon cannot be misread: inside `match { }` there are only arms, and a colon inside a pattern's parentheses, as in `Rect(w: x)`, belongs to that pattern. A `match` body looks like a map literal on purpose, since it reads as a lookup table.
 - **Guards:** `pat if cond: ...` adds a condition.
 - **Arms** are tried in order and separated by newlines or `;`. An arm's body is an expression or a braced block. A block body ends the arm at its closing `}`, so the next arm can follow on the same line with no `;`: `match x { 0: { a += 1; b = 0 } 1: b += 1; _: {} }`.
-- **`{` after an arm's colon always starts a block**, as after a lambda's `|x|`. An arm that returns a map literal wraps it in parentheses: `k: ({1: 2})`.
+- **`{` after an arm's colon always starts a block**, as after `=>` or `fn ... =`. An arm that returns a map literal wraps it in parentheses: `k: ({1: 2})`.
 - **As an expression,** the arm bodies unify like `if` branches. As a statement, their values are ignored.
 - **No match** traps with kind `"match"`. Add `_:` to handle the rest.
 
@@ -444,14 +446,28 @@ Functions are first-class, and any function can be called as a method on its fir
 
 **Closures**
 
-- Lambdas are `|x| x + 1` and `|a, b| a + b`. A braced body, `|x| { ... }`, uses `return`, the same rule as a braced `fn`. They capture variables by reference.
-- **Implicit `it`.** A call argument that uses `it` without defining it is a one-parameter lambda, as in Nim's `mapIt`: `nums.map(it * 2)`, `edges.filter(it.w > 3)`, `words.sort_by(it.len())`. `it` means the innermost such argument, so use `|x|` to reach an outer one. Lambdas with two or more parameters use `|a, b|`.
+- Lambdas are `(x) => x + 1` and `(a, b) => a + b`, the syntax of JavaScript and C#. The parentheses can be dropped for one untyped parameter, `x => x + 1`, and `() => 0` takes none. Parameters can be annotated like `fn` parameters, `(p: Point) => p.x`, and so can the result, `(x: int) -> int => x * 2`. A block body, `x => { ... }`, follows the block rule. Lambdas capture variables by reference.
+- `=>` is not `->`, because `->` already marks return types: `(x: int) -> int` alone would not say whether `int` is the result type or the body.
+- **Shorthand closures,** as in Swift. Braces in an expression make a closure whose parameters are `$0`, `$1` and so on:
+  ```
+  lines.map { int($0) }
+  edges.filter { $0.w > 3 }.sort_by { $0.w }
+  xs.fold(0) { $0 + $1 }
+  pairs.map { $0.0 + $0.1 }         // $0 is a tuple; .0 is its first field
+  xs.map({ $0 * 2 })                // also fine inside the parentheses
+  ```
+  - **Scope is the braces.** `$0` belongs to the nearest shorthand braces around it, so `lines.map { int($0) }` does what it says. Braces of an `if`, `match` or `for` inside the closure are ordinary blocks: `{ if $0 > 0 { $0 } else { 0 } }`.
+  - **Parameter count** is the highest `$n` used plus one, so `{ $1 }` takes two and ignores the first. Braces with no `$n` take no parameters.
+  - **Nesting.** An inner shorthand closure cannot reach the outer one's `$0`; name the outer parameter with `=>`: `grid.map(row => row.map { $0 + row.len() })`.
+  - The body is a block, so it can hold statements and its value is its last expression. A body that starts with a typed local, `{ y: int = $0; ... }`, would read as a map literal, so that case uses `=>`.
+  - Using `$0` outside any shorthand braces is a compile error.
+- **Trailing closures.** A shorthand closure written after a call's parentheses is passed as its last argument, and empty parentheses can be left out: `xs.fold(0) { $0 + $1 }`, `xs.map { $0 * 2 }`. The `{` must be on the same line as the call. A trailing closure is not allowed in the head of an `if`, `while`, `for` or `match`, where `{` starts the body, so write `if xs.any({ $0 > 0 }) { ... }` there.
 - They compile by closure conversion: an environment struct plus a function pointer, inlined when the closure does not escape.
 - Record fields may hold closures, but this is discouraged: such records cannot be hashed, compared or passed to C.
 
 **Uniform call syntax.** `x.f(y)` is sugar for `f(x, y)`. The compiler tries a field named `f` first, then a free function. Any library function over a graph therefore becomes a graph method with no extra declaration.
 
-**Default and named arguments.** `fn f(a, k = 1)` gives `k` a default, and a caller can name any argument after the positional ones: `heap(key: -it)`, `t.show(label: |v| "{v}")`. The library relies on this for optional arguments such as `read_ints()` without a count.
+**Default and named arguments.** `fn f(a, k = 1)` gives `k` a default, and a caller can name any argument after the positional ones: `heap(key: { -$0 })`, `t.show(label: v => "{v}")`. The library relies on this for optional arguments such as `read_ints()` without a count.
 
 - **Defaults are evaluated on every call** that leaves them out, never once at definition, so `fn walk(u, seen = set())` gets a fresh set each time. This avoids Python's shared mutable default.
 - A default may use earlier parameters: `fn sub(a, lo = 0, hi = a.len())`.
@@ -479,7 +495,7 @@ b.width * b.height                    // field access is always exact
 **Variadic functions.** `..` before the last parameter collects the remaining arguments into an array, the same `..` that means "the rest" in patterns. `..` before an argument spreads an array into the call. All the collected arguments share one type, since arrays are homogeneous.
 
 ```
-fn min(first, ..rest) = rest.fold(first, |a, b| if b < a { b } else { a })
+fn min(first, ..rest) = rest.fold(first, (a, b) => if b < a { b } else { a })
 min(3, 1, 2)
 min(..xs)
 ```
@@ -588,8 +604,8 @@ Every collection and range supports method chaining, so a pipeline reads left to
 
 ```
 best = read_lines()
-  .map(|l| l.extract_ints().sum())
-  .filter(|s| s > 0)
+  .map { $0.extract_ints().sum() }
+  .filter { $0 > 0 }
   .sort(desc: true)
   .take(3)
   .sum()
@@ -602,17 +618,17 @@ best = read_lines()
 - **Lazy and eager.** A chain that starts from a range is lazy, so `(1..).filter(is_prime).take(3)` stops after three. A chain that starts from a collection is eager and each stage returns an array, so `xs.map(f)[0]` works. This is Kotlin's split between collections and sequences.
 - **Fusion.** A later optimization pass fuses visible `.map().filter().sum()` chains into one loop. It only fuses lambdas that do no I/O and assign to no captured variable, so it never changes what a program prints.
 - Lambda parameter types come from the receiver, so chains need no annotations.
-- **Chains replace nested calls.** Every function works in chain position, `print` included, so `print(sum(set(xs)))` is `xs.to_set().sum().print()`. Adding a step means typing `.f()` at the end instead of jumping back to wrap the line in parentheses. There is no pipe or composition operator; `|x| f(g(x))` composes when a function value is needed.
+- **Chains replace nested calls.** Every function works in chain position, `print` included, so `print(sum(set(xs)))` is `xs.to_set().sum().print()`. Adding a step means typing `.f()` at the end instead of jumping back to wrap the line in parentheses. There is no pipe or composition operator; `x => f(g(x))` composes when a function value is needed.
 
 **Parallel iterators.** `.par()` in a chain runs the rest of the chain across all cores. It is the language's only parallel feature, with no threads, channels or `async`.
 
 ```
 // AoC 2015 day 4: first number whose MD5 starts with six zeros
-ans = (1..).par().find(|n| md5("{key}{n}").starts_with("000000"))
+ans = (1..).par().find(n => md5("{key}{n}").starts_with("000000"))
 
 // try every obstacle position, count the ones that make the guard loop
-cells = (0..n).flat_map(|r| (0..m).map(|c| (r, c)))
-loops = cells.par().filter(|p| g[p] == '.' and loops_with(p)).count()
+cells = (0..n).flat_map(r => (0..m).map(c => (r, c)))
+loops = cells.par().filter { g[$0] == '.' and loops_with($0) }.count()
 ```
 
 - **Same answer as without `.par()`.** Deleting `.par()` never changes the result. Ordered results keep their order: `map(...).to_array()` is in input order, and `find` and `position` return the first match by index, not whichever thread finished first. Work is split into chunks of a fixed size that does not depend on the number of cores, and partial results are combined in index order, so even a float `sum` is the same on every run and every machine.
