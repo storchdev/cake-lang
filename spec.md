@@ -1,6 +1,6 @@
-# CP Language Spec — Draft v0.1
+# CP Language Spec — Draft v0.2
 
-Nov 2, 2026 · @Hudson Shi
+Nov 8, 2026 · @Hudson Shi
 
 ## Goals and principles
 
@@ -41,11 +41,11 @@ for i in 0..n { total += i * i }
 
 // two function forms
 fn sq(x) = x * x          // expression body: its value is returned
-fn find(arr, t) {         // braced body: statements, explicit return
+fn index_of(arr, t) {     // braced body: statements, explicit return
   for i in 0..arr.len() {
     if arr[i] == t { return i }
   }
-  return null             // so find returns int?
+  return null             // so index_of returns int?
 }
 
 f = |a, b| a + b
@@ -76,7 +76,7 @@ Types are inferred with Hindley-Milner-style unification, so users almost never 
 - **Trade-off.** Errors in generic code appear at the call site, and a generic function nobody calls is never fully checked. The library therefore needs a test file that calls every function.
 - **Chaining helps inference.** The receiver is checked before the arguments, so in `pts.map(|p| p.x)` the element type of `pts` is known when the lambda is checked. A bare `f = |p| p.x` that is never used is an error.
 - **Empty literals** such as `[]` and `{}` take their type from later use, and it is an error if none is found.
-- **Field access is structural.** `fn norm(p) = p.x*p.x + p.y*p.y` works on any tuple or record that has `x` and `y`; the field is checked at instantiation. Field names can be shortened to a unique prefix; see Named arguments and fields.
+- **Field access is structural.** `fn norm(p) = p.x*p.x + p.y*p.y` works on any tuple or record that has `x` and `y`; the field is checked at instantiation.
 - **Optionals.** `T?` is a value or `null`, and whether a slot is optional is inferred; see Errors and optionals.
 - **No union types.** `if c { 1 } else { "a" }` and `[1, "a"]` are errors, not `int | string`. Untagged unions would cost principal types, catch fewer bugs and put a runtime tag on every value. Variant types, `type Expr = Num(v) | Add(l, r)`, cover the cases that need alternatives.
 
@@ -94,7 +94,7 @@ y = x as int               // explicit conversion
 
 Nothing requires an annotation except `extern` declarations, empty literals whose type is never determined, and overloads that differ only by type, which dispatch on their annotated parameters. Examples and the library should use annotations only where they carry meaning.
 
-- **Type syntax.** `[T]` array, `{K: V}` map, `{T}` set, `(A, B)` tuple, `(x: A, y: B)` named tuple, `T?` optional, and `fn(A, B) -> R` for functions, which is a declaration with the names removed.
+- **Type syntax.** Built-in names are `int`, `float`, `bool`, `str`, the fixed-width integers and the number types in Numbers. `[T]` array, `{K: V}` map, `{T}` set, `(A, B)` tuple, `(x: A, y: B)` named tuple, `T?` optional, and `fn(A, B) -> R` for functions, which is a declaration with the names removed.
 - **Type aliases.** `type Pos = (int, int)` names a type. When the right side is a type, `type` makes an alias; when it lists constructors like `Num(v) | Add(l, r)`, it declares variants (see Variant types). An alias of a number type also converts: with `type M = Mod(1e9 + 7)`, `M(5)` is a value of `M`.
 
 ## Errors and optionals
@@ -128,7 +128,7 @@ try { run() } catch e { if e.kind != "eof" { raise e } }   // rethrow
 ```
 best = null                     // best: int?, from later use
 for x in xs { if best == null or x < best { best = x } }
-fn find(arr, t) { ... return i ... return null }   // returns int?
+fn index_of(arr, t) { ... return i ... return null }   // returns int?
 record Node(val, left, right)   // Node(1, null, null) makes left and right Node?
 ```
 
@@ -188,7 +188,7 @@ Strings, arrays, maps and sets are built in, homogeneous, and hashable or compar
 
 | Type | Literal | Notes |
 | --- | --- | --- |
-| String | `"abc"`, `"x = {x}"`, `r"raw"` | Immutable bytes; every literal interpolates; see Strings and formatting |
+| String `str` | `"abc"`, `"x = {x}"`, `r"raw"` | Immutable bytes; every literal interpolates; see Strings and formatting |
 | Array `[T]` | `[1, 2, 3]` | Growable and bounds-checked; `a[-1]` is the last element; `a[i..j]` slices; `+` concatenates and `* n` repeats |
 | Map `{K: V}` | `{1: "a"}` | Hash map; keys may be ints, strings or tuples |
 | Set | `set(1, 2, 3)` | Hash set; `x in s` tests membership; `\| & - ^` are union, intersection, difference and symmetric difference |
@@ -397,8 +397,9 @@ type Instr =                            // long types: one variant per line
 - **Fields are named.** In `Circle(center, r)`, `center` and `r` are field names, and fields may be annotated like parameters: `Circle(center: (int, int), r: float)`.
 
 - **Each variant is a record.** It is constructed, mutated, compared, hashed and printed exactly like one, with field types inferred. Variants order by declaration order, then by fields. A variant with no fields, like `Halt`, is a single shared value. A `type` needs at least two variants; a single one is a `record`.
+- **Shared fields.** If every variant of a type has a field with the same name, it can be used on the type itself without narrowing: with `type Shape = Circle(color, c, r) | Rect(color, corner, w, h)`, `s.color` works on any `Shape`, and so do `s.color = "red"` and `s.with(color: "red")`. The field's types must unify across variants. A field that some variant lacks is a compile error that names that variant. Fields may sit at different positions; the compiler branches on the tag when they do, and uses a plain load when they share a position.
 - **`x is Add`** tests the variant. In an `if`, `while`, `and` or `or`, it narrows a local the same way a `null` check does, so the variant's fields can be used directly.
-- **No exhaustiveness checking.** Code that forgets a variant fails at run time, like every other mistake.
+- **No exhaustiveness checking in `match`.** A `match` that forgets a variant fails at run time, like every other mistake. Overloads on variants are checked: a call that leaves a variant uncovered is a compile error; see Overloads on variants.
 
 ## Pattern matching
 
@@ -443,7 +444,7 @@ Functions are first-class, and any function can be called as a method on its fir
 
 **Default and named arguments.** `fn f(a, k = 1)` gives `k` a default, and a caller can name any argument after the positional ones: `heap(key: -it)`, `t.show(label: |v| "{v}")`. The library relies on this for optional arguments such as `read_ints()` without a count.
 
-**Shortened names.** An argument or field name can be any prefix that picks out exactly one candidate, so nobody has to remember whether it was `address` or `addr`:
+**Shortened argument names.** A named argument can be any prefix that picks out exactly one parameter, so nobody has to remember whether it was `address` or `addr`:
 
 ```
 fn f(age, address, name) = ...
@@ -453,14 +454,14 @@ f(ad: "Main St", ag: 12, n: "john")   // shortened
 pp(state, ind: 4, l: Many)
 
 record Box(width, height)
-b.wi * b.he                           // b.width * b.height
+Box(w: 3, h: 4)                       // construction is a call, so this works
+b.width * b.height                    // field access is always exact
 ```
 
-- An exact name always wins, so a field `n` beside `name` is still reachable as `n`.
+- An exact name always wins, so a parameter `n` beside `name` is still reachable as `n`.
 - A prefix that fits two names is a compile error that lists them: `a:` could be `age` or `address`.
-- This covers named arguments, record and variant construction, `.with()`, pattern fields and field access with `.`. It does not cover variables, functions or types, which are always written in full.
-- Field access is resolved after the type is known, so in a generic `fn area(s) = s.w * s.h`, `.w` may mean `w` for one record type and `width` for another.
-- Adding a field or parameter can make an old prefix ambiguous. The error then names both candidates, which is a fair trade for code that is written once.
+- Prefixes work only for `name:` arguments in a call: function calls, record and variant construction, and `.with()`. Field access with `.` and field names in patterns are always exact, as are variables, functions and types.
+- Adding a parameter or field can make an old prefix ambiguous. The error then names both candidates, which is a fair trade for code that is written once.
 - Named arguments use `:`, not Python's `=`, so a printed record like `Point(x: 1, y: 2)` is also valid code.
 
 **Variadic functions.** `..` before the last parameter collects the remaining arguments into an array, the same `..` that means "the rest" in patterns. `..` before an argument spreads an array into the call. All the collected arguments share one type, since arrays are homogeneous.
@@ -489,9 +490,30 @@ fn *(a: int, b: Vec) = ...    // 2 * v is its own definition
 - No implicit conversion applies to user-defined overloads, and builtin numeric widening stays in the builtin table.
 - A fully annotated body is checked at its definition. Unannotated parameters keep it generic, checked at instantiation.
 - Two definitions that could accept the same call equally well are an error at the second definition, and that includes parameter counts that overlap through defaults. A literal argument that fits more than one overload, such as `f(1)` with `f(x: int)` and `f(x: float)`, takes its default type.
-- Overloadable operators are `+ - * / // % ** @ ==` and unary `-`. The hooks `cmp`, `hash` and `str` customize derived behavior.
+- Overloadable operators are `+ - * / // % ** @ \ ==` and unary `-`. The hooks `cmp`, `hash` and `str` customize derived behavior.
 - `==`, `hash` and `cmp` are derived structurally. Overriding `==` without `hash` is an error. `cmp(a, b)` returns negative, zero or positive and derives `< > <= >=`, `sort` and priority queue ordering.
 - `str` controls both `print(p)` and `"{p}"`, and containers call it on their elements.
+
+**Overloads on variants.** Overloads can take the place of a `match`. If a function has an overload for each variant, it can be called on the variant type itself, and the compiler picks the overload from the value's variant at run time:
+
+```
+type Shape = Circle(c, r) | Rect(corner, w, h) | Tri(a, b, c)
+
+fn area(s: Circle) = 3.14 * s.r * s.r
+fn area(s: Rect) = s.w * s.h
+fn area(s) = 0.0                      // the rest: unannotated matches anything
+
+shapes = [Circle((0, 0), 2), Rect((0, 0), 3, 4)]   // [Shape]
+total = shapes.map(area).sum()        // each element calls its own overload
+```
+
+- **Resolution.** For an argument whose type is a variant type, the call is resolved once per variant, as if the argument had been narrowed to that variant. The usual rules apply: the most specific overload wins, an overload on the whole type (`s: Shape`) fits every variant, and an unannotated parameter fits anything and is instantiated with that variant's type. If every variant picks the same definition, it is an ordinary call. Otherwise the compiler generates the `match`.
+- **Checked at the call.** A variant with no fitting overload is a compile error that names it, so adding `Hex` to `Shape` points at every call that needs a new overload. Without a fallback, this is exhaustiveness checking, which `match` does not have.
+- **Results unify** across the chosen overloads, like `match` arms.
+- **Everywhere overloads go.** This works through uniform call syntax (`s.area()`), for a function passed as a value (`shapes.map(area)`), and for operators and hooks, so `fn str(c: Circle)` and `fn cmp(a: Rect, b: Rect)` customize printing and ordering per variant.
+- **Several variant arguments.** When more than one argument has a variant type, every combination is resolved, as in `fn hits(a: Circle, b: Rect)`. Each combination must resolve, and a fallback such as `fn hits(a, b) = false` covers the rest.
+- **Optionals are not variants.** A `Shape?` must be narrowed with a `null` check first.
+- **Cost:** one branch on the tag, the same code a hand-written `match` produces.
 
 **Memoization.** A `memo` modifier before `fn` caches results by arguments, which covers most dynamic programming. The cache does not see globals the function reads, so with several test cases call `f.clear()` before each one.
 
@@ -517,7 +539,7 @@ print(a.dist(b))            // geom's dist, found through Point's module
 
 **The standard library is always in scope.** Every library name is available unqualified with no import, as if star-imported.
 
-**Your modules are accessed with a dot.** `import geom` binds the name `geom`, and its contents are reached as `geom.dist`, `geom.Point` and so on.
+**Your modules are accessed with a dot.** `import geom` binds the name `geom`, and its contents are reached as `geom.dist`, `geom.Point` and so on. Every top-level name in a module is public; there are no private names.
 
 **Selectors pick what comes in unqualified.** Whatever follows the module path says what to take, so there is one keyword and it reads left to right:
 
@@ -712,9 +734,13 @@ extern fn sqrt(x: float) -> float
 
 The compiler is a short pipeline that emits one C file and lets a C compiler finish the job.
 
-&#91;embedded content: compiler pipeline · 7 stages plus the C runtime\]
-
-Read the top row left to right, then the bottom row right to left. The C runtime is compiled once and linked in.
+1. **Parse.** Lex and parse each file, and set aside `#in`/`#out` blocks and pragmas.
+2. **Resolve.** Load imports, build each module's scope with the standard library underneath it, and bind names.
+3. **Infer.** Unify types, solve optionality and resolve argument prefixes and overloads.
+4. **Monomorphize.** Make one copy of each generic function per set of argument types, starting from the code that actually runs, so uncalled functions are never compiled.
+5. **Check.** Run the checks that need concrete types: format specs, the `.par()` write rules and unused variables.
+6. **Lower.** Turn closures into environment structs, optionals into tags or nullable pointers, `match` into branches and fusable chains into loops.
+7. **Emit.** Write one C file with `#line` directives, then call `gcc` or `clang`, which links it with the prebuilt C runtime and GMP.
 
 **Choices**
 
@@ -730,15 +756,13 @@ Read the top row left to right, then the bottom row right to left. The C runtime
 1. Ints, floats, functions, control flow, arrays and strings.
 2. Inference with implicit generics and monomorphization.
 3. Tuples, records, variant types and `match`, closures, maps, sets, uniform call syntax, optionals and `try`/`catch`.
-4. The `read_` family, buffered output, formatting and derived printing, `dbg` and `pp`.
-5. The library in the language itself: iterators, graphs, grids and data structures.
+4. The `read_` family, buffered output, formatting and derived printing, `dbg` and `pp`, and the `test` command.
+5. Imports, then the library in the language itself: iterators, graphs, grids and data structures.
 6. `big`, `Mod`, `rat`, matrices and the solver.
 7. FFI, then iterator fusion, then `.par()`, which builds on fusion.
 
 ## Open questions
 
-These decisions are still open, and each can change the compiler's design.
+- **Language name.** The language is still unnamed, so the CLI command and the source extension (`.cp` here) are placeholders.
 
-- **Language name.** The language is still unnamed, which also leaves the source file extension open.
-- **Imports.** Whether names starting with `_` should be private to their module. Whether a `bundle` command that inlines imports into one file is needed if submitting to online judges ever matters.
-- **Before any compiler code,** rewrite 10 to 15 real contest and Advent of Code solutions in this syntax and note where it feels clumsy.
+**Before any compiler code,** rewrite 10 to 15 real Advent of Code and contest solutions in this syntax and note where it feels clumsy.
