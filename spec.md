@@ -93,7 +93,7 @@ visited: {(int, int)} = set()   // a set type
 g: fn(int) -> int = sq     // a function type: takes an int, returns an int
 fn f(a: [int]) -> int      // checked against the body
 p: (int, _) = (1, "a")     // _ leaves part of the type to inference
-y = x as int               // explicit conversion
+y = int(x)                 // explicit conversion: call the type
 ```
 
 Nothing requires an annotation except `extern` declarations, empty literals whose type is never determined, and overloads that differ only by type, which dispatch on their annotated parameters. Examples and the library should use annotations only where they carry meaning.
@@ -111,7 +111,7 @@ Every runtime failure is the same kind of trap: overflow, an out-of-bounds index
 
 ```
 x = try { parse(line) } catch e { print(e.msg); 0 }   // an expression, like if
-n = try int(s) ?? 0                                   // bare try: T?, null on error
+n = try int(s) or 0                                   // bare try: T?, null on error
 raise "no path found"                                 // type never, like return
 assert(lo <= hi, "bad range {lo} {hi}")                // an ordinary function
 try { run() } catch e { if e.kind != "eof" { raise e } }   // rethrow
@@ -119,7 +119,7 @@ try { run() } catch e { if e.kind != "eof" { raise e } }   // rethrow
 
 - **One error type.** `e` has `.kind` (`"overflow"`, `"index"`, `"key"`, `"div"`, `"eof"`, `"null"`, `"match"`, `"assert"`, `"unset"` or `"raise"`) and `.msg`. There are no typed catch clauses; test `e.kind` and rethrow.
 - **`try { ... } catch e { ... }`** is an expression whose branches unify like `if`. `catch` without a name is allowed.
-- **Bare `try expr`** yields `T?`, with `null` if `expr` traps. It binds tighter than `??`, so `try int(s) ?? 0` reads as expected.
+- **Bare `try expr`** yields `T?`, with `null` if `expr` traps. It binds tighter than `or`, so `try int(s) or 0` reads as expected.
 - **`raise "msg"`** has type never, so it fits any branch. `raise e` rethrows a caught error unchanged.
 - **`assert(cond, msg)`** is a library function, not a keyword. It traps with kind `"assert"` when `cond` is false, and `msg` is optional.
 - **Implementation.** The runtime never frees, so unwinding has no cleanup to do and `setjmp`/`longjmp` in the C runtime is enough; no unwind tables or landing pads are needed. Each `try` body compiles to a closure called through `rt_try(fn, env)`, so locals it touches already live in the closure environment and `longjmp` cannot clobber them. Code outside a `try` pays nothing.
@@ -138,7 +138,8 @@ record Node(val, left, right)   // Node(1, null, null) makes left and right Node
 
 - **Inferred optionality.** Each type variable carries a nullable flag that only goes from false to true. If `null`, a `T?` value or a bare `try` flows into a variable, field, parameter or return, that slot becomes `T?`. Because the flag never goes back, it is solved inside unification without general subtyping.
 - **Lifting.** A plain `T` stored into a `T?` slot is wrapped automatically. A `T?` used where `T` is required is an error until it is narrowed.
-- **Using an optional:** `x ?? d` supplies a default, `x!` unwraps or traps with kind `"null"`, and `x?.f` gives `null` if `x` is `null`. `??` on a non-optional is an error, since it usually means a type mistake.
+- **Using an optional:** `x or d` supplies a default, `x!` unwraps or traps with kind `"null"`, and `x?.f` gives `null` if `x` is `null`. Defaults chain: `m.get(a) or m.get(b) or -1`.
+- **`or` follows the left side's type.** On a `bool` it is logical or. On an optional it gives the left value unless it is `null`, so `x or default` reads as in Python. There is no truthiness, so `0`, `""` and `[]` never fall through, and `or` on a plain `int` or `str` is a compile error. A `bool?` on the left is also an error, since `false or true` would mean `false` as a default and `true` as logic; write `flag == true` or check for `null` first. `or` has Python's precedence, below comparisons, so `(m.get(k) or 0) > 5` needs its parentheses.
 - **Narrowing.** After `x != null` or `x == null` in an `if`, `while`, `and` or `or`, a local is treated as `T` on the non-null path until it is reassigned. `while node != null { node = node.next }` type-checks.
 - **Representation.** An optional record is a nullable pointer, so it costs nothing. Other optionals carry a tag next to the value, which also keeps `T??` correct, as with `m.get(k)` on a `{K: int?}`.
 
@@ -159,12 +160,12 @@ Numbers are statically typed machine types by default, with Python-style arithme
 **Rules**
 
 1. A literal is "some number" until constrained. If nothing pins it, whole literals become `int` and fractional ones `float`. Underscores separate digits, as in `1_000_000_007`, and an exponent literal with a whole value, such as `1e9` or `2e5`, is a whole literal, so `INF = 1e18` is an `int`. An integer literal too large for `int` is a compile error with a hint to annotate `big`; where the context is already `big`, it is fine. The program-level pragma `#default int = big` changes the fallback, and because `int` is an alias resolved before checking, the whole program flips with no other change.
-2. Implicit widening only: `u8` to `int` to `float`, and `int` to `big`, `Mod(m)` or `rat`, so `x: big = 1` and `total + count` just work. Arithmetic on integer types narrower than `int` promotes to `int`, so `s[i] - '0'` is an `int`, and storing back into a narrow slot is range-checked. Lengths and indices are `int`, so `i < a.len()` never mixes signed and unsigned. Narrowing and mixing signed with unsigned are compile errors; use `as`.
+2. Implicit widening only: `u8` to `int` to `float`, and `int` to `big`, `Mod(m)` or `rat`, so `x: big = 1` and `total + count` just work. Arithmetic on integer types narrower than `int` promotes to `int`, so `s[i] - '0'` is an `int`, and storing back into a narrow slot is range-checked. Lengths and indices are `int`, so `i < a.len()` never mixes signed and unsigned. Narrowing and mixing signed with unsigned are compile errors; convert by calling the type, as in `u8(x)`.
 3. `/` always yields a float, `//` is floor division, and `%` takes the sign of the divisor, so `-7 % 3 == 2`.
 4. `**` is power. An integer to an integer power stays an integer, and a negative exponent traps, except on `Mod(m)`, where `x ** -1` is the modular inverse and traps if none exists. Bit operators are `& | ^ ~ << >>`.
 5. Overflow traps, using checked arithmetic in the generated C (see Compiler architecture). Code that wants wraparound, such as hashing, uses the wrapping types below instead of turning checks off.
 6. `big`, `rat` and `bigfloat` are GMP's `mpz_t`, `mpq_t` and `mpf_t`, so values cross the FFI boundary to GMP-using C code unchanged. The runtime links GMP instead of a hand-written bignum.
-7. **Conversions.** `as` converts between numeric types: `x as int` truncates a float toward zero and is range-checked. Parsing is a function named after the type: `int(s)`, `float(s)` and `big(s)`, which also work as `.map(int)` and, through uniform call syntax, as `s.int()`. `text(b)` turns a byte into a one-character string, since `str(b)` gives its number; `text(row)` and `text(grid)` do the same for a byte array and a byte grid, which becomes lines. `text` is an ordinary overloaded function, so `b.text()` works too and you can add overloads for your own types. There is no `ord`: `'a'` is already a `u8`, so `s[i] - 'a'` needs no conversion.
+7. **Conversions.** Every conversion is a call to the type's name. Between numbers, `int(x)` truncates a float toward zero, and every narrowing conversion, such as `u8(n)` or `int(x)` on a huge float, is range-checked and traps if the value does not fit. Parsing uses the same names: `int(s)`, `float(s)` and `big(s)`. All of them work as `.map(int)` and, through uniform call syntax, as `x.int()`. There is no `as` operator; `as` only renames imports. `text(b)` turns a byte into a one-character string, since `str(b)` gives its number; `text(row)` and `text(grid)` do the same for a byte array and a byte grid, which becomes lines. `text` is an ordinary overloaded function, so `b.text()` works too and you can add overloads for your own types. There is no `ord`: `'a'` is already a `u8`, so `s[i] - 'a'` needs no conversion.
 8. **Limits.** `int.max`, `int.min` and the same on every fixed-width type, plus `inf` for floats. Arithmetic past `int.max` traps, which catches a careless `dist[u] + w` on an unvisited node.
 
 **Modular arithmetic.** `Mod(m)` is a number type whose `+ - * **` are always reduced modulo `m`, so a problem that says "print the answer modulo 1,000,000,007" needs no `%` anywhere:
@@ -194,7 +195,7 @@ Strings, arrays, maps and sets are built in, homogeneous, and hashable or compar
 | --- | --- | --- |
 | String `str` | `"abc"`, `"x = {x}"`, `r"raw"` | Immutable bytes; every literal interpolates; see Strings and formatting |
 | Array `[T]` | `[1, 2, 3]` | Growable and bounds-checked; `a[-1]` is the last element; `a[i..j]` slices; `+` concatenates and `* n` repeats |
-| Map `{K: V}` | `{1: "a"}` | Hash map; any value without closures can be a key, hashed by its contents |
+| Map `{K: V}` | `{1: "a"}` | Hash map; any value without closures can be a key, hashed by its contents; `map(default: v)` makes one with a default value |
 | Set | `set(1, 2, 3)` | Hash set; `x in s` tests membership; `\| & - ^` are union, intersection, difference and symmetric difference |
 | Deque, priority queue | `deque()`, `heap()` | Library types; `heap` is a min-heap with an optional key function |
 | Ordered map and set | `omap()`, `oset()` | Sorted keys with `lower_bound`, which Python lacks |
@@ -209,7 +210,19 @@ Strings, arrays, maps and sets are built in, homogeneous, and hashable or compar
 - `x in coll` works for arrays, strings, sets and map keys.
 - **Negative indices are literal only.** `a[-1]` and `a[-2..]` count from the end, but a computed index that comes out negative traps, so `dp[i - 1]` at `i = 0` is an error instead of a silent read of the last element.
 - **A lookup that can miss returns an optional:** `m.get(k)`, `s.find(x)`, `a.find(pred)`, `a.position(pred)` and `bsearch`. `min` and `max` of an empty collection trap, as in Python.
-- `m[k] += 1` on a missing key starts from zero for numeric values, which gives counters for free. The same goes for mutating a missing value in place: `m[k].push(x)` starts from `[]`, `m[k].add(x)` from an empty set and `m[k] += "s"` from `""`, which gives grouping for free. Reading a missing `m[k]` otherwise traps, while `m.get(k)` returns an optional, so `m.get(k) ?? 0` works.
+- `m[k] += 1` on a missing key starts from zero for numeric values, which gives counters for free. The same goes for mutating a missing value in place: `m[k].push(x)` starts from `[]`, `m[k].add(x)` from an empty set and `m[k] += "s"` from `""`, which gives grouping for free. Reading a missing `m[k]` otherwise traps, while `m.get(k)` returns an optional, so `m.get(k) or 0` works.
+- **Default values.** `map(default: v)` makes an empty map whose missing keys read as `v`:
+  ```
+  dist = map(default: INF)
+  best = map(default: -INF)
+  best[k] = max(best[k], x)              // no trap the first time k is seen
+  groups = map(default: [])              // each missing key gets its own fresh []
+  dist: {Pos: int} = map(default: INF)   // with a type, when inference needs one
+  ```
+  - **Reading does not insert,** unlike Python's `defaultdict`. `k in m`, `m.len()`, `m.get(k)` and iteration see only keys that were written, so a lookup never grows the map or changes a loop over it. Writing or updating, as in `m[k] += 1` or `m[k].push(x)`, starts from the default and stores the result.
+  - **A mutable default is copied** for each missing key, with `.copy()`, so `map(default: [])` never shares one array between keys. This is the same guarantee as default arguments.
+  - The default is part of the map, so `m.copy()` keeps it. Maps from `{}`, `to_map`, `counter()` and `group_by` have none.
+  - This is the only use of `map(...)` as a constructor; it takes exactly one argument, named `default`, so it never conflicts with `xs.map(f)`. A default computed from the key is not supported; use `m.get(k) or f(k)`.
 - Fresh-row constructors prevent aliasing: `grid(n, m, 0)` and `[0] * n` allocate new rows, and `[[0] * m] * n` is a compile error.
 - Strings have `.split(sep)`, `.trim()`, `.words()`, `.lines()`, `.bytes()`, `.contains(x)`, `.find(x)` and `.reverse()`.
 - **`s.extract_ints()`** pulls every integer out of any text, in whatever numeric type the context asks for: `"Sensor at x=-3, y=17".extract_ints()` is `[-3, 17]`. A `-` is a minus sign only when it does not follow a digit, so the range `"3-7"` gives `[3, 7]`. `s.extract_floats()` does the same for decimals.

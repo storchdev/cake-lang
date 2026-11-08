@@ -104,8 +104,7 @@ Recursive descent for statements and declarations, and a Pratt parser for expres
 
   | Level | Operators | Notes |
   | --- | --- | --- |
-  | 1 | `??` | right-associative |
-  | 2 | `or` | |
+  | 2 | `or` | logical or, or an optional's default, by the left side's type |
   | 3 | `and` | |
   | 4 | `not` | prefix |
   | 5 | `== != < > <= >= in` `not in` `is` | chained, as in Python |
@@ -118,14 +117,13 @@ Recursive descent for statements and declarations, and a Pratt parser for expres
   | 12 | `* / // % @ \` | |
   | 13 | unary `- ~` | |
   | 14 | `**` | right-associative and binds tighter than unary minus on its left, so `-2**2` is `-4` |
-  | 15 | `as` | |
   | 16 | postfix `. () [] ! ?.` | |
 
-  Bare `try expr` and `raise expr` are prefix forms that take a full expression at level 2, so `try int(s) ?? 0` is `(try int(s)) ?? 0` as the spec requires.
+  Bare `try expr` and `raise expr` are prefix forms whose operand is parsed at level 3, so `try int(s) or 0` is `(try int(s)) or 0` as the spec requires.
 - **Chained comparisons** become one node with a list of operands, so the lowering can evaluate each middle operand once.
 - **Which `{` is a block.** After an `if`, `while`, `for`, `match`, `try` or `catch` head, `else`, `fn ... =`, `=>` and a match arm's colon, `{` always starts a block. A map literal there needs parentheses, as in Rust. Anywhere else in an expression, the parser scans to the matching `}`: if it is empty, or its first item is followed by a `:` at the top level of the braces, it is a map literal; otherwise it is a shorthand closure.
 - **Blocks.** A block node holds its statements and an optional final expression, which is its value. A trailing `;` after that expression does not remove it, as the spec requires.
-- **Lambdas.** At `(` in expression position, the parser scans ahead to the matching `)`. If `=>`, or `-> Type =>`, follows, the parentheses are a parameter list; otherwise they are a parenthesized expression or tuple. A name followed by `=>` is a one-parameter lambda. The body is a full expression at the lowest precedence, so `x => a ?? b` takes all of `a ?? b`.
+- **Lambdas.** At `(` in expression position, the parser scans ahead to the matching `)`. If `=>`, or `-> Type =>`, follows, the parentheses are a parameter list; otherwise they are a parenthesized expression or tuple. A name followed by `=>` is a one-parameter lambda. The body is a full expression at the lowest precedence, so `x => a or b` takes all of `a or b`.
 - **Statements vs. expressions.** `if`, `match` and `try` parse as expressions everywhere. A statement that starts with one of the keywords in the spec's rule and ends with `}` needs no separator before the next statement.
 - **Assignment.** `x = e`, `a, b = e`, `x += e` and `let x = e` are separate node kinds. The parser does not decide whether `x = e` declares; the resolver does.
 - **Shorthand closures.** A closure node is pushed on a stack while its body is parsed. Each `$n` is attached to the top closure, which records the highest index; that sets the parameter count. A `$n` with an empty stack is a parse error. Braces of `if`, `match` and the like do not push, so `$0` inside them belongs to the closure around them.
@@ -173,7 +171,7 @@ This is the largest stage. It checks function bodies and creates specialized cop
 - **Uniform call syntax.** `x.f(args)` tries a field `f`, then `f` in scope, then `f` in the module that declared the type of `x`.
 - **Fields.** Field access on a known record or tuple looks the name up exactly. On a variant type, it is allowed when every variant has the field. On an unknown type it is deferred.
 - **Argument prefixes** are resolved against the chosen candidate's parameter names, after overload resolution has the candidate set. If prefix matching gives different results for different candidates, that is an ambiguity error.
-- **Type-directed builtins.** `print`, `read`, `read_rows`, the `read_` family's numeric typing, `as`, `int(s)` and the like are handled here directly, not through overloading.
+- **Type-directed builtins.** `print`, `read`, `read_rows`, the `read_` family's numeric typing, and the conversions named after types, such as `int(x)` and `u8(x)`, are handled here directly, not through overloading.
 - **Format strings.** Each interpolation's spec is parsed and checked against the expression's type here, since that is where the type is known. It becomes a format node with a fixed set of options.
 - **Errors in instances** show the expression, then the chain of calls that created the instance, ending at the user's own code. That is the only way an error in generic library code makes sense.
 
@@ -194,7 +192,7 @@ Turns typed instances into a C-shaped tree: statements, expressions, and declara
 | `if`, `match`, block as a value | Statement expression |
 | `match` | Tests in arm order: tag checks, length checks, literal compares, then bindings; guards as extra conditions |
 | Chained comparison | Temporaries for middle operands |
-| `x?.f`, `x ?? d`, `x!` | Tag or null test |
+| `x?.f`, `x or d` on an optional, `x!` | Tag or null test |
 | `try`/`catch` | Body as a closure called through `rt_try`; see below |
 | Closures | Environment struct plus function pointer; captured variables that are assigned after capture live in a heap box |
 | Fresh loop variable | A new box per iteration, only when a closure captures it |
@@ -251,7 +249,7 @@ C, compiled once, with a header the generated code includes. Small enough to rea
 - **Traps.** `rt_trap(kind, msg, file, line)` either jumps to the innermost `rt_try` frame, kept in a per-thread stack, or prints `file:line: kind: msg` and exits with 101. In a `.par()` worker it records the trap with its element index and stops that worker.
 - **Strings.** Builder, slicing, `split`, `lines`, `words`, `trim`, `find`, `extract_ints` and comparisons.
 - **Formatting.** Integers in each base with padding; floats both as the shortest round-trip form and as exact fixed-point with ties away from zero. Both work from the exact binary value. The shortest form uses the Ryū algorithm. The fixed form multiplies out the exact value with GMP, which is simple and fast enough for output.
-- **Hash tables.** A macro-generated open-addressing table in `map.h`, instantiated in the generated C for each key and value type, so the C compiler can inline hashing and comparison. Insertion order is kept with a separate entry array, which gives deterministic iteration. Each entry stores its key's hash. In `--debug` builds, lookups that hit and table growth recompute the hash and trap with kind `"key"` if it changed, which catches keys mutated after insertion.
+- **Hash tables.** A macro-generated open-addressing table in `map.h`, instantiated in the generated C for each key and value type, so the C compiler can inline hashing and comparison. Insertion order is kept with a separate entry array, which gives deterministic iteration. A map made with `map(default: v)` stores the default in its header; a missed read returns it, or a copy for array, map and set values, without inserting. Each entry stores its key's hash. In `--debug` builds, lookups that hit and table growth recompute the hash and trap with kind `"key"` if it changed, which catches keys mutated after insertion.
 - **Sorting.** A stable merge sort over elements of any size with a comparison function, instantiated per element type.
 - **Thread pool.** Started on the first `.par()`. Workers take chunk indexes from an atomic counter, write each chunk's result into its own slot, and the caller combines the slots in order. `find`-style chains publish the lowest matching chunk index so later chunks can stop.
 - **Big numbers.** Thin wrappers over GMP for the operations the language exposes, plus reading and printing.
@@ -300,7 +298,7 @@ Each milestone ends with tests passing. The milestone numbers match the spec's.
 
 Decisions the compiler needs that the spec does not make yet. Each should be settled in `spec.md` before or during the milestone that needs it.
 
-- **Operator precedence.** The parser uses the table above for now. The spec should include a table. Questions: where `..` sits relative to arithmetic and comparison, whether `-2**2` is `-4` as in Python, and where `as`, `is` and `in` bind.
+- **Operator precedence.** The parser uses the table above for now. The spec should include a table. Questions: where `..` sits relative to arithmetic and comparison, whether `-2**2` is `-4` as in Python, and where `is` and `in` bind.
 - **Sort stability.** The plan is a stable sort, as in Python; the spec should say so, since `sort_by` on ties is common in AoC.
 - **Map and set iteration order.** Printing is sorted, but `for (k, v) in m` has no stated order. The plan is insertion order, as in Python, which also makes `.par()` over a map deterministic.
 - **Shifts.** What `x << 64`, a negative shift amount and a left shift that overflows do. Trapping, like other overflow, fits the spec best.
