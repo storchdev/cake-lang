@@ -1,10 +1,10 @@
-# CP Language Spec — Draft v0.2
+# Cake Language Spec — Draft v0.2
 
 Nov 8, 2026 · @Hudson Shi
 
 ## Goals and principles
 
-This is a statically typed, compiled language for competitive programming and Advent of Code, built to get from idea to accepted solution with the least friction. It compiles to C and is not meant for large, durable software, though a program can import helper files of its own.
+Cake ("Cake: A Kleen Experience") is a statically typed, compiled language for competitive programming and Advent of Code, built to get from idea to accepted solution with the least friction. It compiles to C and is not meant for large, durable software, though a program can import helper files of its own.
 
 **Goals**
 
@@ -62,6 +62,7 @@ outer: for r in 0..n {    // labeled loop
 - **Bindings:** `x = expr` declares `x` the first time and reassigns it afterwards. Assigning to a name that exists in an enclosing scope of the same function, including one captured by a lambda, reassigns it; otherwise it declares a new local. `let x = expr` is optional and always creates a new binding in the current scope, which is how to shadow. Destructuring needs no parentheses: `a, b = b, a + b` evaluates the right side first. The compiler warns about a variable that is assigned but never read, which catches typos. There is no `const`.
 - **Control flow:** `if`/`else`, `match` and `try`/`catch` are expressions; `while`, `for x in iterable`, `break` and `continue` are statements. `for` destructures: `for (u, v) in edges`, `for (k, v) in m`, `for (i, x) in a.enumerate()`. Each iteration gets a fresh loop variable, so a closure made inside the loop keeps that iteration's value, not the last one.
 - **Labeled loops:** `outer: for ...` names a loop, and `break outer` or `continue outer` acts on it from any depth.
+- **Boolean operators are words:** `and`, `or` and `not`, as in Python, with `not in` for non-membership. There is no `&&`, `||` or prefix `!`; writing one is a compile error with a hint. `!` appears only in `!=` and in `x!`, which unwraps an optional (see Errors and optionals). `& | ^ ~` are bitwise.
 - **Chained comparisons:** `0 <= r < n` means `0 <= r and r < n`, with `r` evaluated once.
 - **Ranges:** `a..b` excludes `b`, `a..=b` includes it, and both are lazy. `a..` has no end, so `for t in 1.. { ... }` loops until `break`. Slices may leave out either end: `a[i..]`, `a[..j]`.
 - **Blocks are expressions.** `{ ... }` runs its statements, and its value is its last expression. A block that ends in a statement, such as a `for` loop or an assignment, has no value (unit, which is not `null`, so `x = print(1)` is an error). The rule is the same for function bodies, lambda bodies, `if`, `match` and `try`.
@@ -563,8 +564,8 @@ total = shapes.map(area).sum()        // each element calls its own overload
 A program can import other source files, mainly so Advent of Code days can share parsing and grid helpers and so a personal library of templates can be reused. There are no packages, no `__init__` files and no manifest: a module is one file, and a folder is only part of a path.
 
 ```
-import geom                 // geom.cp next to this file
-import aoc.parse            // aoc/parse.cp; the module is named parse
+import geom                 // geom.cak next to this file
+import aoc.parse            // aoc/parse.cak; the module is named parse
 import aoc.parse as p       // rename
 import grid2.*              // everything in grid2, unqualified
 import aoc.input.{lines, ints}  // just these names, unqualified
@@ -576,7 +577,7 @@ b = a + geom.Point(3, 4)    // geom's + on Point, found without a prefix
 print(a.dist(b))            // geom's dist, found through Point's module
 ```
 
-**Lookup.** `import a.b` loads `a/b.cp` relative to the importing file. If it is not there, the compiler looks in one user library folder, set by an environment variable, so personal templates are available from any day's folder. The `.cp` extension is a placeholder until the language has a name.
+**Lookup.** `import a.b` loads `a/b.cak` relative to the importing file. If it is not there, the compiler looks in one user library folder, set by an environment variable, so personal templates are available from any day's folder. The `.cak` extension is a placeholder until the language has a name.
 
 **The standard library is always in scope.** Every library name is available unqualified with no import, as if star-imported.
 
@@ -803,7 +804,5 @@ The compiler is a short pipeline that emits one C file and lets a C compiler fin
 7. FFI, then iterator fusion, then `.par()`, which builds on fusion.
 
 ## Open questions
-
-- **Language name.** The language is still unnamed, so the CLI command and the source extension (`.cp` here) are placeholders.
 
 **Before any compiler code,** rewrite 10 to 15 real Advent of Code and contest solutions in this syntax and note where it feels clumsy.

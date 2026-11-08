@@ -1,10 +1,10 @@
-# Compiler Design — Draft v0.1
+# Cake Compiler Design — Draft v0.1
 
 Nov 8, 2026 · @Hudson Shi
 
 How the compiler for the language in `spec.md` (Draft v0.2) is built. The spec is the source of truth for what programs mean; this file covers how the compiler gets there. When the two disagree, fix this file, or raise the question and change the spec.
 
-The language is still unnamed. This file uses `cpl` for the command, `.cp` for source files and `CPL_PATH` for the user library folder, all placeholders.
+The language is still unnamed. This file uses `cake` for the command, `.cak` for source files and `CPL_PATH` for the user library folder, all placeholders.
 
 ## Overview
 
@@ -19,17 +19,17 @@ The compiler is written in Nim and compiles one program, meaning a main file plu
 
 **Toolchain.** Developed against Nim 2.2.12, gcc 16.2 and clang 23.1 on x86-64 Linux, with GMP from the system. Other platforms are not a goal for v1.
 
-**No dependencies.** The compiler uses only Nim's standard library and builds with one `nim c -d:release src/cpl.nim`, so there is no Nimble package. A `config.nims` holds the flags.
+**No dependencies.** The compiler uses only Nim's standard library and builds with one `nim c -d:release src/cake.nim`, so there is no Nimble package. A `config.nims` holds the flags.
 
 ## Command line
 
 | Command | Does |
 | --- | --- |
-| `cpl run day3.cp` | Compile and run; stdin and stdout pass through |
-| `cpl test day3.cp` | Compile once, run every `#in` block, compare against `#out` |
-| `cpl build day3.cp -o day3` | Compile to an executable |
-| `cpl check day3.cp` | Parse and type-check only, no C compiler |
-| `cpl emit day3.cp` | Print the generated C |
+| `cake run day3.cak` | Compile and run; stdin and stdout pass through |
+| `cake test day3.cak` | Compile once, run every `#in` block, compare against `#out` |
+| `cake build day3.cak -o day3` | Compile to an executable |
+| `cake check day3.cak` | Parse and type-check only, no C compiler |
+| `cake emit day3.cak` | Print the generated C |
 
 | Flag | Effect |
 | --- | --- |
@@ -37,9 +37,9 @@ The compiler is written in Nim and compiles one program, meaning a main file plu
 | `--keep-c` | Keep the generated C next to the binary |
 | `--cc clang` | Use clang instead of gcc |
 
-- **Caching.** The runtime is compiled once per compiler version into `~/.cache/cpl/` as `libcplrt.a`. Programs are not cached in v1; `gcc -O2` on one generated file is fast enough for AoC-sized programs.
-- **Exit codes.** A compile error exits with 1. A trap in the program exits with 101 after printing its message, so `cpl test` can tell a crash from wrong output.
-- **`cpl test` output.** Each block reports pass, fail with a line diff, or crash with the trap message, then a summary line. Blocks run in parallel, since they are independent processes.
+- **Caching.** The runtime is compiled once per compiler version into `~/.cache/cake/` as `libcakert.a`. Programs are not cached in v1; `gcc -O2` on one generated file is fast enough for AoC-sized programs.
+- **Exit codes.** A compile error exits with 1. A trap in the program exits with 101 after printing its message, so `cake test` can tell a crash from wrong output.
+- **`cake test` output.** Each block reports pass, fail with a line diff, or crash with the trap message, then a summary line. Blocks run in parallel, since they are independent processes.
 
 ## Source layout
 
@@ -47,7 +47,7 @@ One Nim module per stage, so each stage can be tested on its own.
 
 ```
 src/
-  cpl.nim        command line and driver
+  cake.nim        command line and driver
   diag.nim       spans, error collection and printing
   source.nim     file loading, #in/#out and pragma extraction
   lexer.nim
@@ -61,11 +61,11 @@ src/
   emitc.nim      C text, mangling, #line
   cc.nim         invoking gcc or clang and running the result
 runtime/
-  cplrt.h        everything the generated C includes
+  cakert.h        everything the generated C includes
   alloc.c  str.c  io.c  fmt.c  trap.c  par.c  big.c  map.h  sort.c
 lib/
-  prelude.cp     re-exports the rest; imported implicitly
-  iter.cp  coll.cp  str.cp  math.cp  grid.cp  graph.cp  tree.cp  ds.cp  matrix.cp
+  prelude.cak     re-exports the rest; imported implicitly
+  iter.cak  coll.cak  str.cak  math.cak  grid.cak  graph.cak  tree.cak  ds.cak  matrix.cak
 tests/
   run/  errors/  traps/  lib/  aoc/
 ```
@@ -141,7 +141,7 @@ Recursive descent for statements and declarations, and a Pratt parser for expres
 
 Turns names into bindings and builds the module graph.
 
-- **Imports.** `import a.b` looks for `a/b.cp` next to the importing file, then under `CPL_PATH`. Each file is loaded once. Cycles are an error that prints the cycle. The order modules' top-level code runs in is the depth-first order the spec describes.
+- **Imports.** `import a.b` looks for `a/b.cak` next to the importing file, then under `CPL_PATH`. Each file is loaded once. Cycles are an error that prints the cycle. The order modules' top-level code runs in is the depth-first order the spec describes.
 - **Scopes.** Prelude, then the module, then function, then block. The prelude scope is the standard library's star import. Module-level `fn`, `record`, `type` and `extern` declarations are collected before any body is resolved, so functions can be called before their definition.
 - **Overload sets.** A function name binds to a set of definitions, not to one. Shadowing follows the spec: a definition in the user's file with the same annotated parameter types as a library one replaces it in that file's scope; a different one is added to the set. Each module keeps its own view, so library code never sees the user's replacements.
 - **Assignment.** `x = e` reassigns if `x` is bound in an enclosing scope of the same function, including a captured one, and declares a new local otherwise. `let` always declares. Module globals are visible in every function of their module.
@@ -211,9 +211,9 @@ Turns typed instances into a C-shaped tree: statements, expressions, and declara
 
 ### 10. Emit C
 
-- One `.c` file: `#include "cplrt.h"`, type declarations in dependency order, function prototypes, then globals and functions, with `#line` directives pointing at `.cp` source lines.
-- **Mangling.** Every instance gets a readable name from its module, function name and a short hash of its type key, like `geom_dist_3fa2`. Readable names make `cpl emit` and gdb usable.
-- **Compile.** `gcc -std=gnu11 -O2 -fwrapv -fno-strict-aliasing -w`, then link with `libcplrt.a -lgmp -lpthread -lm`. Warnings are off because generated code is not the user's. A C compiler error is always a bug in `cpl`; it is reported as an internal error with the path to the kept C file.
+- One `.c` file: `#include "cakert.h"`, type declarations in dependency order, function prototypes, then globals and functions, with `#line` directives pointing at `.cak` source lines.
+- **Mangling.** Every instance gets a readable name from its module, function name and a short hash of its type key, like `geom_dist_3fa2`. Readable names make `cake emit` and gdb usable.
+- **Compile.** `gcc -std=gnu11 -O2 -fwrapv -fno-strict-aliasing -w`, then link with `libcakert.a -lgmp -lpthread -lm`. Warnings are off because generated code is not the user's. A C compiler error is always a bug in `cake`; it is reported as an internal error with the path to the kept C file.
 
 ## Value representation in C
 
@@ -256,12 +256,12 @@ C, compiled once, with a header the generated code includes. Small enough to rea
 
 ## Standard library
 
-- **Written in the language.** `lib/*.cp` files are ordinary modules. `prelude.cp` star-imports the rest, and every user module implicitly star-imports `prelude`.
+- **Written in the language.** `lib/*.cak` files are ordinary modules. `prelude.cak` star-imports the rest, and every user module implicitly star-imports `prelude`.
 - **Primitives.** What the library cannot write in the language comes from two places:
   - `extern fn` declarations of runtime C functions, for anything with concrete types, such as reading input or string search.
   - A fixed table of compiler intrinsics for operations that are generic over element types, such as array length, push and indexing, hash table operations, and derived equality, hashing, ordering and printing. Intrinsic names start with `__`, and only `lib/` files may call them.
 - **Load cost.** The library is parsed on every run in v1. Only called functions are checked and compiled, so a large library costs parse time only. A cache of parsed library files is a later option if parsing shows up in profiles.
-- **Library test file.** `tests/lib/all.cp` calls every library function at least once with typical types, as the spec requires, since generic code is only checked when instantiated.
+- **Library test file.** `tests/lib/all.cak` calls every library function at least once with typical types, as the spec requires, since generic code is only checked when instantiated.
 
 ## Diagnostics
 
@@ -274,7 +274,7 @@ C, compiled once, with a header the generated code includes. Small enough to rea
 
 The language's own test blocks do most of the work.
 
-- **`tests/run/`** Programs with `#in` and `#out` blocks. The runner calls `cpl test` on each one.
+- **`tests/run/`** Programs with `#in` and `#out` blocks. The runner calls `cake test` on each one.
 - **`tests/errors/`** Programs that must not compile. The expected error is a comment on the line where it should appear: `// error: ambiguous prefix`. The runner checks the line and that the message contains the text.
 - **`tests/traps/`** Programs that must trap with a given kind, written the same way with `// trap: overflow`.
 - **`tests/aoc/`** The 10 to 15 Advent of Code and contest solutions from the spec's next step, with real inputs and answers. These are the regression suite that matters most.
@@ -289,7 +289,7 @@ Each milestone ends with tests passing. The milestone numbers match the spec's.
 1. **Ints, floats, functions, control flow, arrays and strings.** Source, lexer, parser, resolver, and a first infer pass with no generics; emit C; runtime allocator, traps, output and basic strings. First target: a program that reads numbers and prints their sum, through gcc.
 2. **Inference with implicit generics and monomorphization.** The instantiation worklist, number defaulting, error chains.
 3. **Tuples, records, variants, `match`, closures, maps, sets, uniform call syntax, optionals and `try`.** Hash tables, closure conversion, captures and boxing, optional flags and narrowing, `rt_try`, overloads and variant dispatch.
-4. **Input, buffered output, formatting, printing, `dbg`, `pp`, and `cpl test`.** The runtime formatter, format string checking and test blocks.
+4. **Input, buffered output, formatting, printing, `dbg`, `pp`, and `cake test`.** The runtime formatter, format string checking and test blocks.
 5. **Imports and the library.** Module loading, qualified names, the prelude, intrinsics, and the library itself.
 6. **`big`, `Mod`, `rat`, matrices and the solver.** GMP glue, Barrett reduction.
 7. **FFI, fusion, then `.par()`.** The write analysis in the check stage, the thread pool, chunked lowering.
