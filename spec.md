@@ -162,7 +162,7 @@ Numbers are statically typed machine types by default, with Python-style arithme
 
 1. A literal is "some number" until constrained. If nothing pins it, whole literals become `int` and fractional ones `float`. Underscores separate digits, as in `1_000_000_007`, and an exponent literal with a whole value, such as `1e9` or `2e5`, is a whole literal, so `INF = 1e18` is an `int`. An integer literal too large for `int` is a compile error with a hint to annotate `big`; where the context is already `big`, it is fine. The program-level pragma `#default int = big` changes the fallback, and because `int` is an alias resolved before checking, the whole program flips with no other change.
 2. Implicit widening only: `u8` to `int` to `float`, and `int` to `big`, `Mod(m)` or `rat`, so `x: big = 1` and `total + count` just work. Arithmetic on integer types narrower than `int` promotes to `int`, so `s[i] - '0'` is an `int`, and storing back into a narrow slot is range-checked. Lengths and indices are `int`, so `i < a.len()` never mixes signed and unsigned. Narrowing and mixing signed with unsigned are compile errors; convert by calling the type, as in `u8(x)`.
-3. `/` always yields a float, `//` is floor division, and `%` takes the sign of the divisor, so `-7 % 3 == 2`.
+3. `/` always yields a float, `~/` is floor division, and `%` takes the sign of the divisor, so `-7 % 3 == 2`.
 4. `**` is power. An integer to an integer power stays an integer, and a negative exponent traps, except on `Mod(m)`, where `x ** -1` is the modular inverse and traps if none exists. Bit operators are `& | ^ ~ << >>`.
 5. Overflow traps, using checked arithmetic in the generated C (see Compiler architecture). Code that wants wraparound, such as hashing, uses the wrapping types below instead of turning checks off.
 6. `big`, `rat` and `bigfloat` are GMP's `mpz_t`, `mpq_t` and `mpf_t`, so values cross the FFI boundary to GMP-using C code unchanged. The runtime links GMP instead of a hand-written bignum.
@@ -175,7 +175,7 @@ Numbers are statically typed machine types by default, with Python-style arithme
 type M = Mod(1e9 + 7)               // reads like the problem statement
 ways: [M] = [0] * (n + 1)
 ways[0] = 1
-for i in 1..=n { ways[i] = ways[i - 1] * 2 + ways[i // 2] }
+for i in 1..=n { ways[i] = ways[i - 1] * 2 + ways[i ~/ 2] }
 print(ways[n])                      // already reduced; cannot overflow
 
 n, m = read_ints(2)                 // a modulus given in the input
@@ -389,7 +389,7 @@ Tuples are immutable values and records are mutable references, following Python
 
 - **Destructuring:** `a, b = pair`, `(a, b) = pair` and `[n, m] = read_ints(2)`.
 - **Constructing records:** arguments are positional or named, and fields may have defaults: `record State(pos, steps = 0)` is built with `State(p)`, `State(p, 3)` or `State(pos: p, steps: 3)`, which is also how records print.
-- **Tuples are vectors.** On tuples of numbers with the same shape, `+` and `-` work element by element, `*` and `//` by a number scale, and `-p` negates, so grid movement is `np = p + d`. A `[[T]]` grid can be indexed by a pair, `g[p]` for `g[p.0][p.1]`. Comparison stays lexicographic. Arrays do not do this, since `+` already concatenates them and `*` repeats them; numeric vectors of any length belong to the matrix library.
+- **Tuples are vectors.** On tuples of numbers with the same shape, `+` and `-` work element by element, `*` and `~/` by a number scale, and `-p` negates, so grid movement is `np = p + d`. A `[[T]]` grid can be indexed by a pair, `g[p]` for `g[p.0][p.1]`. Comparison stays lexicographic. Arrays do not do this, since `+` already concatenates them and `*` repeats them; numeric vectors of any length belong to the matrix library.
 - **Changing one field:** `p.with(x: 5)` returns a copy of a tuple or record with that field replaced, since tuples cannot be mutated.
 - **Equality, hash, order and printing** are derived structurally for every tuple and record. Override them with the hooks described under overloading.
 - **Assignment never copies.** `b = a` makes two names for one record, and passing to a function passes the reference. Arrays, maps and sets work the same way. See Copying under Built-in collections for `.copy()`.

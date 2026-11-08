@@ -114,7 +114,7 @@ Recursive descent for statements and declarations, and a Pratt parser for expres
   | 9 | `<< >>` | |
   | 10 | `.. ..=` | non-associative; either end may be missing |
   | 11 | `+ -` | |
-  | 12 | `* / // % @ \` | |
+  | 12 | `* / ~/ % @ \` | |
   | 13 | unary `- ~` | |
   | 14 | `**` | right-associative and binds tighter than unary minus on its left, so `-2**2` is `-4` |
   | 16 | postfix `. () [] ! ?.` | |
