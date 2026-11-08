@@ -31,7 +31,7 @@ This is a statically typed, compiled language for competitive programming and Ad
 
 ## Syntax basics
 
-Braces delimit blocks and newlines end statements. Functions and lambdas follow one rule: an `= expr` or `|x| expr` body returns its expression, and a braced body uses `return`. Other braced blocks used as values, in `if`, `match` and `try`, yield their last expression. A program is a file of top-level statements and functions, run in order, with no `main`. It can import other files; see Imports.
+Braces delimit blocks, and newlines or optional semicolons end statements. Functions and lambdas follow one rule: an `= expr` or `|x| expr` body returns its expression, and a braced body uses `return`. Other braced blocks used as values, in `if`, `match` and `try`, yield their last expression. A program is a file of top-level statements and functions, run in order, with no `main`. It can import other files; see Imports.
 
 ```
 // assignment declares a variable the first time; types are inferred
@@ -57,6 +57,8 @@ outer: for r in 0..n {    // labeled loop
 }
 ```
 
+- **Semicolons and line breaks.** `;` ends a statement anywhere a newline would, so one-liners work: `for i in 0..n { s += a[i]; t ^= a[i] }` and `fn f(x) { y = x * 2; return y + 1 }`. A trailing `;` is allowed and changes nothing, so `{ print(x); 0; }` still yields `0`. A statement that starts with `if`, `for`, `while`, `match`, `try` or `fn` and ends with its closing `}` needs no `;` before the next statement on the same line: `for x in a { s += x } print(s)`. Any other statement, such as an assignment whose value is an `if`, still needs one. A newline does not end a statement inside `( )` or `[ ]`, after a binary operator or comma, or before a line that starts with `.`, so chains and long expressions can be broken across lines.
+- **Trailing separators.** Every comma-separated list allows a trailing comma: array, map and set literals, tuples, call arguments, parameter lists, record and variant fields, patterns, type syntax and import selectors such as `import geom.{dist, Point,}`. This makes one-item-per-line lists easy to reorder. A trailing comma never changes meaning, and there are no one-element tuples, so `(x,)` is a compile error rather than Python's 1-tuple. `match` arms separated by `;` allow a trailing `;` too, and a variant list may start with `|`.
 - **Bindings:** `x = expr` declares `x` the first time and reassigns it afterwards. Assigning to a name that exists in an enclosing scope of the same function, including one captured by a lambda, reassigns it; otherwise it declares a new local. `let x = expr` is optional and always creates a new binding in the current scope, which is how to shadow. Destructuring needs no parentheses: `a, b = b, a + b` evaluates the right side first. The compiler warns about a variable that is assigned but never read, which catches typos. There is no `const`.
 - **Control flow:** `if`/`else`, `match` and `try`/`catch` are expressions; `while`, `for x in iterable`, `break` and `continue` are statements. `for` destructures: `for (u, v) in edges`, `for (k, v) in m`, `for (i, x) in a.enumerate()`. Each iteration gets a fresh loop variable, so a closure made inside the loop keeps that iteration's value, not the last one.
 - **Labeled loops:** `outer: for ...` names a loop, and `break outer` or `continue outer` acts on it from any depth.
@@ -425,7 +427,8 @@ d = match m.get(k) { null: 0; v if v > 0: v; _: -1 }
 - **Patterns:** literals (numbers, strings, `'#'` bytes), names that bind, `_`, tuples, arrays of a fixed length with an optional `..rest`, variants such as `Add(l, r)`, and `null`. They nest.
 - **Arm syntax** is `pattern: body`, like Python's `case pattern:` without the keyword. The colon cannot be misread: inside `match { }` there are only arms, and a colon inside a pattern's parentheses, as in `Rect(w: x)`, belongs to that pattern. A `match` body looks like a map literal on purpose, since it reads as a lookup table.
 - **Guards:** `pat if cond: ...` adds a condition.
-- **Arms** are tried in order and separated by newlines or `;`. An arm's body is an expression or a braced block.
+- **Arms** are tried in order and separated by newlines or `;`. An arm's body is an expression or a braced block. A block body ends the arm at its closing `}`, so the next arm can follow on the same line with no `;`: `match x { 0: { a += 1; b = 0 } 1: b += 1; _: {} }`.
+- **`{` after an arm's colon always starts a block**, as after a lambda's `|x|`. An arm that returns a map literal wraps it in parentheses: `k: ({1: 2})`.
 - **As an expression,** the arm bodies unify like `if` branches. As a statement, their values are ignored.
 - **No match** traps with kind `"match"`. Add `_:` to handle the rest.
 
