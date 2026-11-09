@@ -3,7 +3,7 @@ import std/algorithm
 import std/enumerate
 import std/strutils
 
-type Span* = ref object
+type Span* = object
   fileIndex*: uint8
   start*: int64
   stop*: int64
