@@ -51,21 +51,29 @@ proc getDiagnosticHeader(self: DriverCtx, diag: Diagnostic): string =
   let (row, startCol) = self.getDiagnosticPos(diag)
   result = fmt"{augFile.name}:{row+1}:{startCol+1}: {$diag.severity}: {diag.message}"
 
+proc emitDiagnostic(self: DriverCtx, diag: Diagnostic) = 
+  let augFile = self.files[diag.span.fileIndex]
   let (row, startCol) = self.getDiagnosticPos(diag)
+
+  var line: string
+  if row == len(augFile.lineOffsets) - 1:
+    line = augFile.content[augFile.lineOffsets[row] ..^ 1]
+  else:
+    line =
+      augFile.content[augFile.lineOffsets[row] ..< (augFile.lineOffsets[row + 1] - 1)]
+  line = line.strip(chars = {'\r'})
+
+  var numCarets = diag.span.stop - diag.span.start
+  if (numCarets == 0):
+    numCarets = 1
+  if startCol + numCarets > len(line):
+    numCarets = len(line) - startCol
   stderr.writeLine(self.getDiagnosticHeader(diag))
+  stderr.writeLine("    " & line)
+  stderr.writeLine("    " & " ".repeat(startCol) & "^".repeat(numCarets))
 proc printDiagnostics*(self: DriverCtx) =
   for diag in self.diagnostics:
-    let augFile = self.files[diag.span.fileIndex]
-    let numCarets = diag.span.stop - diag.span.start
-    var line: string
-    if row == len(augFile.lineOffsets) - 1:
-      line = augFile.content[row ..^ 1]
-    else:
-      line = augFile.content[row ..< augFile.lineOffsets[row + 1]]
-
-    stderr.writeLine(self.getDiagnosticHeader(diag))
-    stderr.writeLine("    " & line)
-    stderr.writeLine("    " & " ".repeat(startCol) & "^".repeat(numCarets))
+    self.emitDiagnostic(diag)
 
     for note in diag.notes:
-      stderr.writeLine(self.getDiagnosticHeader(note))
+      self.emitDiagnostic(note)
