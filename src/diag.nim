@@ -12,9 +12,9 @@ type Span* = object
 #   message*: string
 
 type DiagnosticSeverity* = enum
-  dsError
-  dsWarning
-  dsNote
+  dsError = "error"
+  dsWarning = "warning"
+  dsNote = "note"
 
 type Diagnostic* = ref object
   severity*: DiagnosticSeverity
@@ -47,10 +47,7 @@ proc getDiagnosticHeader(self: DriverCtx, diag: Diagnostic): string =
   let augFile = self.files[diag.span.fileIndex]
   let row = upperBound(augFile.lineOffsets, diag.span.start) - 1
   let startCol = diag.span.start - augFile.lineOffsets[row] + 1
-  var sev = $diag.severity
-  sev.removePrefix("ds")
-  sev = sev.toLower()
-  result = fmt"{augFile.name}:{row+1}:{startCol+1}: {sev}: {diag.message}"
+  result = fmt"{augFile.name}:{row+1}:{startCol+1}: {$diag.severity}: {diag.message}"
 
 proc printDiagnostics(self: DriverCtx) =
   for diag in self.diagnostics:
