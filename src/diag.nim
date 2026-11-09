@@ -59,7 +59,7 @@ proc getDiagnosticHeader(self: DriverCtx, diag: Diagnostic): string =
   let (row, startCol) = self.getSpanPos(diag.span)
   result = fmt"{augFile.name}:{row+1}:{startCol+1}: {$diag.severity}: {diag.message}"
 
-proc emitDiagnostic(self: DriverCtx, diag: Diagnostic) = 
+proc emitDiagnostic(self: DriverCtx, diag: Diagnostic) =
   let augFile = self.files[diag.span.fileIndex]
   let (row, startCol) = self.getSpanPos(diag.span)
 
