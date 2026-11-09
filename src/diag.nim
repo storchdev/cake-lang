@@ -35,7 +35,7 @@ type DriverCtx* = ref object
   files: seq[AugFile]
   diagnostics: seq[Diagnostic]
 
-proc addFile*(self: DriverCtx, fileName: string) =
+proc addFile*(self: DriverCtx, fileName: string): AugFile =
   let content = readFile(fileName)
   var offsets: seq[int] = @[0]
 
@@ -43,7 +43,10 @@ proc addFile*(self: DriverCtx, fileName: string) =
     if c == '\n':
       offsets.add(i + 1)
 
-  self.files.add(AugFile(name: fileName, content: content, lineOffsets: offsets))
+  result = AugFile(
+    index: len(self.files), name: fileName, content: content, lineOffsets: offsets
+  )
+  self.files.add(result)
 
 proc getSpanPos(self: DriverCtx, span: Span): (int, int) =
   let augFile = self.files[span.fileIndex]
