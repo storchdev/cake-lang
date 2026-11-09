@@ -82,7 +82,7 @@ The spec lists seven stages. In the code, inference and monomorphization are one
 
 ### 2. Lexer
 
-Produces tokens with spans (file, byte offset, line, column).
+Produces tokens with spans: a file index and start and end byte offsets, end exclusive. Line and column are not stored; when printing a diagnostic they come from a binary search over the file's line start offsets, recorded when the file is loaded.
 
 - **Newlines** become `Newline` tokens, which the lexer drops when:
   - it is inside `( )` or `[ ]` (it tracks a stack of open brackets; `{` does not suppress newlines, since blocks need them),
