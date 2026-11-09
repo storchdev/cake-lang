@@ -21,6 +21,7 @@ type Diagnostic* = ref object
   message*: string
   span*: Span
   notes*: seq[Diagnostic] # each must have severity dsNote, empty notes
+  hints*: seq[string]
 
 type AugFile* = ref object
   name*: string
@@ -46,6 +47,7 @@ proc getDiagnosticPos(self: DriverCtx, diag: Diagnostic): (int, int) =
   let row = upperBound(augFile.lineOffsets, diag.span.start) - 1
   let startCol = diag.span.start - augFile.lineOffsets[row]
   result = (row, startCol)
+
 proc getDiagnosticHeader(self: DriverCtx, diag: Diagnostic): string =
   let augFile = self.files[diag.span.fileIndex]
   let (row, startCol) = self.getDiagnosticPos(diag)
@@ -68,12 +70,18 @@ proc emitDiagnostic(self: DriverCtx, diag: Diagnostic) =
     numCarets = 1
   if startCol + numCarets > len(line):
     numCarets = len(line) - startCol
+
   stderr.writeLine(self.getDiagnosticHeader(diag))
   stderr.writeLine("    " & line)
   stderr.writeLine("    " & " ".repeat(startCol) & "^".repeat(numCarets))
+
 proc printDiagnostics*(self: DriverCtx) =
   for diag in self.diagnostics:
     self.emitDiagnostic(diag)
 
     for note in diag.notes:
       self.emitDiagnostic(note)
+
+    for hint in diag.hints:
+      stderr.writeLine("    hint: " & hint)
+
