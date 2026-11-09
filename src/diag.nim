@@ -59,7 +59,7 @@ proc getDiagnosticHeader(self: DriverCtx, diag: Diagnostic): string =
   let (row, startCol) = self.getSpanPos(diag.span)
   result = fmt"{augFile.name}:{row+1}:{startCol+1}: {$diag.severity}: {diag.message}"
 
-proc emitDiagnostic(self: DriverCtx, diag: Diagnostic) =
+proc emitDiagnostic(self: DriverCtx, diag: Diagnostic, output: File = stderr) =
   let augFile = self.files[diag.span.fileIndex]
   let (row, startCol) = self.getSpanPos(diag.span)
 
@@ -77,20 +77,20 @@ proc emitDiagnostic(self: DriverCtx, diag: Diagnostic) =
   if (numCarets == 0):
     numCarets = 1
 
-  stderr.writeLine(self.getDiagnosticHeader(diag))
-  stderr.writeLine("    " & line)
+  output.writeLine(self.getDiagnosticHeader(diag))
+  output.writeLine("    " & line)
   # doesnt handle tabs correctly in the source code
-  stderr.writeLine("    " & " ".repeat(startCol) & "^".repeat(numCarets))
+  output.writeLine("    " & " ".repeat(startCol) & "^".repeat(numCarets))
 
-proc printDiagnostics*(self: DriverCtx) =
+proc emitDiagnostics*(self: DriverCtx, output: File = stderr) =
   for diag in self.diagnostics:
-    self.emitDiagnostic(diag)
+    self.emitDiagnostic(diag, output)
 
     for note in diag.notes:
-      self.emitDiagnostic(note)
+      self.emitDiagnostic(note, output)
 
     for hint in diag.hints:
-      stderr.writeLine("    hint: " & hint)
+      output.writeLine("    hint: " & hint)
 
 proc hasErrors*(self: DriverCtx): bool =
   result = self.diagnostics.any(d => d.severity == dsError)
