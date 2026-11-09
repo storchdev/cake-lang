@@ -66,10 +66,10 @@ proc emitDiagnostic(self: DriverCtx, diag: Diagnostic) =
   line = line.strip(chars = {'\r'})
 
   var numCarets = diag.span.stop - diag.span.start
-  if (numCarets == 0):
-    numCarets = 1
   if startCol + numCarets > len(line):
     numCarets = len(line) - startCol
+  if (numCarets == 0):
+    numCarets = 1
 
   stderr.writeLine(self.getDiagnosticHeader(diag))
   stderr.writeLine("    " & line)
