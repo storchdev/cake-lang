@@ -1,6 +1,5 @@
 import std/strformat
 import std/algorithm
-import std/enumerate
 import std/strutils
 
 type Span* = object
@@ -37,7 +36,7 @@ proc addFile(self: DriverCtx, fileName: string) =
   let content = f.readAll()
   var offsets: seq[int64] = @[0]
 
-  for i, c in enumerate(content):
+  for i, c in content:
     if c == '\n':
       offsets.add(int64(i) + 1)
 
