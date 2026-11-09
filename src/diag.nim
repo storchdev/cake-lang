@@ -73,6 +73,7 @@ proc emitDiagnostic(self: DriverCtx, diag: Diagnostic) =
 
   stderr.writeLine(self.getDiagnosticHeader(diag))
   stderr.writeLine("    " & line)
+  # doesnt handle tabs correctly in the source code
   stderr.writeLine("    " & " ".repeat(startCol) & "^".repeat(numCarets))
 
 proc printDiagnostics*(self: DriverCtx) =
