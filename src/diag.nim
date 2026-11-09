@@ -42,20 +42,20 @@ proc addFile*(self: DriverCtx, fileName: string) =
 
   self.files.add(AugFile(name: fileName, content: content, lineOffsets: offsets))
 
-proc getDiagnosticPos(self: DriverCtx, diag: Diagnostic): (int, int) =
-  let augFile = self.files[diag.span.fileIndex]
-  let row = upperBound(augFile.lineOffsets, diag.span.start) - 1
-  let startCol = diag.span.start - augFile.lineOffsets[row]
+proc getSpanPos(self: DriverCtx, span: Span): (int, int) =
+  let augFile = self.files[span.fileIndex]
+  let row = upperBound(augFile.lineOffsets, span.start) - 1
+  let startCol = span.start - augFile.lineOffsets[row]
   result = (row, startCol)
 
 proc getDiagnosticHeader(self: DriverCtx, diag: Diagnostic): string =
   let augFile = self.files[diag.span.fileIndex]
-  let (row, startCol) = self.getDiagnosticPos(diag)
+  let (row, startCol) = self.getSpanPos(diag.span)
   result = fmt"{augFile.name}:{row+1}:{startCol+1}: {$diag.severity}: {diag.message}"
 
 proc emitDiagnostic(self: DriverCtx, diag: Diagnostic) = 
   let augFile = self.files[diag.span.fileIndex]
-  let (row, startCol) = self.getDiagnosticPos(diag)
+  let (row, startCol) = self.getSpanPos(diag.span)
 
   var line: string
   if row == len(augFile.lineOffsets) - 1:
