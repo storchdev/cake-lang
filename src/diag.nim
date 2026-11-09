@@ -4,8 +4,8 @@ import std/strutils
 
 type Span* = object
   fileIndex*: uint8
-  start*: int64
-  stop*: int64
+  start*: int
+  stop*: int
 
 # type Note* = ref object
 #   span*: Span
@@ -25,7 +25,7 @@ type Diagnostic* = ref object
 type AugFile* = ref object
   name*: string
   content*: string
-  lineOffsets*: seq[int64]
+  lineOffsets*: seq[int]
 
 type DriverCtx* = ref object
   files: seq[AugFile]
@@ -35,10 +35,11 @@ proc addFile(self: DriverCtx, fileName: string) =
   let f = open(fileName)
   let content = f.readAll()
   var offsets: seq[int64] = @[0]
+  var offsets: seq[int] = @[0]
 
   for i, c in content:
     if c == '\n':
-      offsets.add(int64(i) + 1)
+      offsets.add(i + 1)
 
   self.files.add(AugFile(name: fileName, content: content, lineOffsets: offsets))
 
