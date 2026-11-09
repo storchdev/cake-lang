@@ -86,3 +86,34 @@ proc printDiagnostics*(self: DriverCtx) =
     for hint in diag.hints:
       stderr.writeLine("    hint: " & hint)
 
+proc hasErrors*(self: DriverCtx): bool =
+  result = self.diagnostics.any(d => d.severity == dsError)
+
+proc reportError*(
+    self: DriverCtx,
+    span: Span,
+    message: string,
+    notes: seq[Diagnostic],
+    hints: seq[string],
+) =
+  self.diagnostics.add(
+    Diagnostic(
+      severity: dsError, message: message, span: span, notes: notes, hints: hints
+    )
+  )
+
+proc reportWarning*(
+    self: DriverCtx,
+    span: Span,
+    message: string,
+    notes: seq[Diagnostic],
+    hints: seq[string],
+) =
+  self.diagnostics.add(
+    Diagnostic(
+      severity: dsWarning, message: message, span: span, notes: notes, hints: hints
+    )
+  )
+
+proc newNote*(span: Span, message: string): Diagnostic =
+  result = Diagnostic(severity: dsNote, message: message, span: span)
