@@ -31,7 +31,7 @@ type DriverCtx* = ref object
   files: seq[AugFile]
   diagnostics: seq[Diagnostic]
 
-proc addFile(self: DriverCtx, fileName: string) =
+proc addFile*(self: DriverCtx, fileName: string) =
   let content = readFile(fileName)
   var offsets: seq[int] = @[0]
 
@@ -47,7 +47,7 @@ proc getDiagnosticHeader(self: DriverCtx, diag: Diagnostic): string =
   let startCol = diag.span.start - augFile.lineOffsets[row] + 1
   result = fmt"{augFile.name}:{row+1}:{startCol+1}: {$diag.severity}: {diag.message}"
 
-proc printDiagnostics(self: DriverCtx) =
+proc printDiagnostics*(self: DriverCtx) =
   for diag in self.diagnostics:
     let augFile = self.files[diag.span.fileIndex]
     let row = upperBound(augFile.lineOffsets, diag.span.start) - 1
