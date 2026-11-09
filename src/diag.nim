@@ -5,7 +5,7 @@ import std/sequtils
 import std/sugar
 
 type Span* = object
-  fileIndex*: uint8
+  fileIndex*: int
   start*: int
   stop*: int
 
@@ -26,6 +26,7 @@ type Diagnostic* = ref object
   hints*: seq[string]
 
 type AugFile* = ref object
+  index*: int
   name*: string
   content*: string
   lineOffsets*: seq[int]
