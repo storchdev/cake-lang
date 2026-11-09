@@ -32,9 +32,7 @@ type DriverCtx* = ref object
   diagnostics: seq[Diagnostic]
 
 proc addFile(self: DriverCtx, fileName: string) =
-  let f = open(fileName)
-  let content = f.readAll()
-  var offsets: seq[int64] = @[0]
+  let content = readFile(fileName)
   var offsets: seq[int] = @[0]
 
   for i, c in content:
