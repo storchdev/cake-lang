@@ -1,0 +1,3 @@
+fn dist(a: Point, b: Point) {
+    0
+}

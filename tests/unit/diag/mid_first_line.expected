@@ -1,0 +1,3 @@
+mid_first_line.cak:1:5: error: test message
+    let x = 1
+        ^

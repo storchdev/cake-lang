@@ -1,0 +1,3 @@
+warning_only.cak:2:1: warning: test warning
+    x = 2
+    ^

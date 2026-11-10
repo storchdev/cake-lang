@@ -1,0 +1,7 @@
+note_main.cak:3:5: error: no overload of `dist` matches (Point, str)
+    d = dist(p, "x")
+        ^^^^^^^^^^^^
+note_geom.cak:1:4: note: candidate: fn dist(a: Point, b: Point)
+    fn dist(a: Point, b: Point) {
+       ^^^^
+    hint: the second argument must be a Point

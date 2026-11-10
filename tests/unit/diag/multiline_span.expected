@@ -1,0 +1,3 @@
+multiline_span.cak:1:1: error: test message
+    foo(a,
+    ^^^^^^
