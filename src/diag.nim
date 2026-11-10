@@ -3,6 +3,7 @@ import std/algorithm
 import std/strutils
 import std/sequtils
 import std/sugar
+import std/streams
 
 type Span* = object
   fileIndex*: int
