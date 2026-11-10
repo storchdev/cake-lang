@@ -59,7 +59,7 @@ proc getDiagnosticHeader(self: DriverCtx, diag: Diagnostic): string =
   let (row, startCol) = self.getSpanPos(diag.span)
   result = fmt"{augFile.name}:{row+1}:{startCol+1}: {$diag.severity}: {diag.message}"
 
-proc emitDiagnostic(self: DriverCtx, diag: Diagnostic, output: File = stderr) =
+proc emitDiagnostic[T](self: DriverCtx, diag: Diagnostic, output: T = stderr) =
   let augFile = self.files[diag.span.fileIndex]
   let (row, startCol) = self.getSpanPos(diag.span)
 
@@ -82,7 +82,7 @@ proc emitDiagnostic(self: DriverCtx, diag: Diagnostic, output: File = stderr) =
   # doesnt handle tabs correctly in the source code
   output.writeLine("    " & " ".repeat(startCol) & "^".repeat(numCarets))
 
-proc emitDiagnostics*(self: DriverCtx, output: File = stderr) =
+proc emitDiagnostics*[T](self: DriverCtx, output: T = stderr) =
   for diag in self.diagnostics:
     self.emitDiagnostic(diag, output)
 
