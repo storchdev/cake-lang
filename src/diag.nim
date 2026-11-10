@@ -4,6 +4,7 @@ import std/strutils
 import std/sequtils
 import std/sugar
 import std/streams
+import std/os
 
 type Span* = object
   fileIndex*: int
@@ -58,7 +59,7 @@ proc getSpanPos(self: DriverCtx, span: Span): (int, int) =
 proc getDiagnosticHeader(self: DriverCtx, diag: Diagnostic): string =
   let augFile = self.files[diag.span.fileIndex]
   let (row, startCol) = self.getSpanPos(diag.span)
-  result = fmt"{augFile.name}:{row+1}:{startCol+1}: {$diag.severity}: {diag.message}"
+  result = fmt"{extractFilename(augFile.name)}:{row+1}:{startCol+1}: {$diag.severity}: {diag.message}"
 
 proc emitDiagnostic[T](self: DriverCtx, diag: Diagnostic, output: T = stderr) =
   let augFile = self.files[diag.span.fileIndex]
@@ -124,3 +125,6 @@ proc reportWarning*(
 
 proc newNote*(span: Span, message: string): Diagnostic =
   result = Diagnostic(severity: dsNote, message: message, span: span)
+
+proc initSpan*(fileIndex: int, start: int, stop: int): Span =
+  result = Span(fileIndex: fileIndex, start: start, stop: stop)
